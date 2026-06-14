@@ -12,5 +12,6 @@ class EditField(StatesGroup):
     value = State()
 
 
-class DefaultReply(StatesGroup):
+class Greeting(StatesGroup):
     text = State()
+    hours = State()

@@ -1,3 +1,5 @@
+import time
+
 from aiogram import Router, Bot, F
 from aiogram.types import BusinessConnection, Message, CallbackQuery
 
@@ -30,15 +32,34 @@ async def on_message(message: Message, bot: Bot):
     if not conn_id:
         return
 
-    owner_id, enabled, rules, sub_active, default_reply = await db.get_reply_context(conn_id)
+    owner_id, enabled, rules, sub_active, greeting = await db.get_reply_context(conn_id)
     if not owner_id or not enabled or not sub_active:
         return
 
-    if message.from_user and str(message.from_user.id) == str(owner_id):
+    if not message.from_user:
+        return
+    if str(message.from_user.id) == str(owner_id):
         return
 
+    if greeting["enabled"] and greeting["text"]:
+        cust = str(message.from_user.id)
+        last = await db.get_last_seen(owner_id, cust)
+        now = time.time()
+        gap = (greeting["hours"] or 0) * 3600
+        should_greet = (
+            last is None
+            or (now - last) >= gap
+            or (greeting["activated_at"] and last < greeting["activated_at"])
+        )
+        await db.set_last_seen(owner_id, cust, now)
+        if should_greet:
+            await bot.send_message(
+                chat_id=message.chat.id,
+                text=greeting["text"],
+                business_connection_id=conn_id,
+            )
+
     text = message.text.lower().strip()
-    matched = False
     for rule in rules:
         kw = (rule.get("keyword") or "").lower().strip()
         if not kw:
@@ -54,15 +75,7 @@ async def on_message(message: Message, bot: Bot):
                 business_connection_id=conn_id,
                 reply_markup=kb.reply_inline_kb(rule.get("id"), rule.get("buttons")),
             )
-            matched = True
             break
-
-    if not matched and default_reply:
-        await bot.send_message(
-            chat_id=message.chat.id,
-            text=default_reply,
-            business_connection_id=conn_id,
-        )
 
 
 @router.callback_query(F.data.startswith("b:"))

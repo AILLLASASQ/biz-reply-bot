@@ -16,7 +16,7 @@ def _trunc(t, n=30):
 def main_menu() -> ReplyKeyboardMarkup:
     return ReplyKeyboardMarkup(
         keyboard=[
-            [KeyboardButton(text="➕ إضافة رد"), KeyboardButton(text="🤖 الرد الافتراضي")],
+            [KeyboardButton(text="➕ إضافة رد"), KeyboardButton(text="👋 الترحيب")],
             [KeyboardButton(text="📋 قائمة الردود")],
             [KeyboardButton(text="⏯ تشغيل / إيقاف"), KeyboardButton(text="💳 اشتراكي")],
         ],
@@ -94,3 +94,14 @@ def reply_inline_kb(rule_id, buttons):
             btns.append(InlineKeyboardButton(text=_trunc(b["text"]), callback_data=f"b:{rule_id}:{i}"))
     rows = [btns[i : i + 2] for i in range(0, len(btns), 2)]
     return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def greeting_menu_kb(enabled) -> InlineKeyboardMarkup:
+    toggle = "⏸ إيقاف الترحيب" if enabled else "▶️ تفعيل الترحيب"
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="✏️ نص الترحيب", callback_data="gr:text")],
+            [InlineKeyboardButton(text="⏱ عدد الساعات", callback_data="gr:hours")],
+            [InlineKeyboardButton(text=toggle, callback_data="gr:toggle")],
+        ]
+    )

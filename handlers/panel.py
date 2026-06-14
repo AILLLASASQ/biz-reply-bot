@@ -8,7 +8,7 @@ from aiogram.types import Message, CallbackQuery
 import config
 import database as db
 import keyboards as kb
-from states import AddRule, EditField, DefaultReply
+from states import AddRule, EditField, Greeting
 
 router = Router()
 
@@ -74,6 +74,7 @@ async def help_cmd(message: Message):
     text = (
         "<b>الأزرار:</b>\n"
         "➕ إضافة رد — كلمة + رد (مع أزرار اختيارية).\n"
+        "👋 الترحيب — رسالة ترحيب تلقائية حسب الساعات.\n"
         "📋 قائمة الردود — عرض/تعديل/حذف الردود.\n"
         "⏯ تشغيل / إيقاف — تفعيل أو إيقاف الردود.\n"
         "💳 اشتراكي — حالة اشتراكك ومعرّفك.\n\n"
@@ -263,31 +264,63 @@ async def edit_field_value(message: Message, state: FSMContext):
     await message.answer("✅ تم التعديل.", reply_markup=kb.main_menu())
 
 
-@router.message(F.text == "🤖 الرد الافتراضي")
-async def default_reply_menu(message: Message, state: FSMContext):
-    current = await db.get_default_reply(message.from_user.id)
-    cur_txt = current if current else "غير مفعّل"
-    await state.set_state(DefaultReply.text)
+def _greeting_status(g):
+    state = "مفعّل ✅" if g["enabled"] else "موقوف ⏸"
+    txt = g["text"] or "— (لم يُحدّد بعد)"
+    return f"حالة الترحيب: {state}\nيرحّب من جديد لو الزبون ساكت أكثر من {g['hours']} ساعة.\n\nالنص:\n{txt}"
+
+
+@router.message(F.text == "👋 الترحيب")
+async def greeting_menu(message: Message):
+    g = await db.get_greeting(message.from_user.id)
     await message.answer(
-        f"الرد الافتراضي الحالي:\n{cur_txt}\n\n"
-        "أرسل النص الجديد للرد على أي رسالة <b>غير مطابقة</b> لأي كلمة،\n"
-        "أو «إيقاف» لتعطيله، أو «إلغاء» للخروج."
+        _greeting_status(g) + "\n\nاختر ما تريد تعديله:",
+        reply_markup=kb.greeting_menu_kb(g["enabled"]),
     )
 
 
-@router.message(DefaultReply.text)
-async def default_reply_set(message: Message, state: FSMContext):
-    txt = (message.text or "").strip()
+@router.callback_query(F.data == "gr:text")
+async def greeting_text_start(call: CallbackQuery, state: FSMContext):
+    await state.set_state(Greeting.text)
+    await call.message.answer("أرسل نص رسالة الترحيب:")
+    await call.answer()
+
+
+@router.message(Greeting.text)
+async def greeting_text_set(message: Message, state: FSMContext):
+    await db.set_greeting_text(message.from_user.id, (message.text or "").strip())
     await state.clear()
-    if txt == "إلغاء":
-        await message.answer("تم الإلغاء.", reply_markup=kb.main_menu())
+    await message.answer("✅ تم حفظ نص الترحيب.", reply_markup=kb.main_menu())
+
+
+@router.callback_query(F.data == "gr:hours")
+async def greeting_hours_start(call: CallbackQuery, state: FSMContext):
+    await state.set_state(Greeting.hours)
+    await call.message.answer("كم ساعة سكوت قبل إعادة الترحيب؟ أرسل رقماً (مثال: 12):")
+    await call.answer()
+
+
+@router.message(Greeting.hours)
+async def greeting_hours_set(message: Message, state: FSMContext):
+    try:
+        hours = float((message.text or "").strip())
+        if hours < 0:
+            raise ValueError
+    except ValueError:
+        await message.answer("أرسل رقماً صحيحاً للساعات.")
         return
-    if txt == "إيقاف":
-        await db.set_default_reply(message.from_user.id, "")
-        await message.answer("تم إيقاف الرد الافتراضي.", reply_markup=kb.main_menu())
-        return
-    await db.set_default_reply(message.from_user.id, txt)
-    await message.answer("✅ تم تعيين الرد الافتراضي.", reply_markup=kb.main_menu())
+    if hours == int(hours):
+        hours = int(hours)
+    await db.set_greeting_hours(message.from_user.id, hours)
+    await state.clear()
+    await message.answer(f"✅ ضُبطت الفجوة على {hours} ساعة.", reply_markup=kb.main_menu())
+
+
+@router.callback_query(F.data == "gr:toggle")
+async def greeting_toggle(call: CallbackQuery):
+    enabled = await db.toggle_greeting(call.from_user.id)
+    await call.message.edit_text("▶️ تم تفعيل الترحيب (يبدأ من جديد مع الجميع)." if enabled else "⏸ تم إيقاف الترحيب.")
+    await call.answer()
 
 
 @router.message(F.text == "⏯ تشغيل / إيقاف")

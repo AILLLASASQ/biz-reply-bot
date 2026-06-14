@@ -52,6 +52,15 @@ def _sub_active(data):
     return bool(exp) and time.time() < exp
 
 
+def _greeting_of(data):
+    return {
+        "enabled": data.get("greeting_enabled", False),
+        "text": data.get("greeting_text", ""),
+        "hours": data.get("greeting_hours", 12),
+        "activated_at": data.get("greeting_activated_at", 0),
+    }
+
+
 def _fs_read_owner_id(conn_id):
     doc = _db.collection("connections").document(conn_id).get(timeout=FS_TIMEOUT)
     return doc.to_dict().get("owner_id") if doc.exists else None
@@ -59,15 +68,16 @@ def _fs_read_owner_id(conn_id):
 
 def _fs_read_business(owner_id):
     doc = _db.collection("businesses").document(str(owner_id)).get(timeout=FS_TIMEOUT)
-    if not doc.exists:
-        return {"is_enabled": False, "rules": [], "plan": None, "sub_expires": 0, "default_reply": ""}
-    d = doc.to_dict()
+    d = doc.to_dict() if doc.exists else {}
     return {
         "is_enabled": bool(d.get("is_enabled")),
         "rules": d.get("rules", []),
         "plan": d.get("plan"),
         "sub_expires": d.get("sub_expires") or 0,
-        "default_reply": d.get("default_reply") or "",
+        "greeting_enabled": bool(d.get("greeting_enabled")),
+        "greeting_text": d.get("greeting_text") or "",
+        "greeting_hours": d.get("greeting_hours") or 12,
+        "greeting_activated_at": d.get("greeting_activated_at") or 0,
     }
 
 
@@ -135,6 +145,33 @@ def _fs_update_rule_field(owner_id, rule_id, field, value):
     _fs_set_rules(owner_id, rules)
 
 
+def _fs_set_greeting_field(owner_id, field, value):
+    _db.collection("businesses").document(str(owner_id)).set(
+        {field: value}, merge=True, timeout=FS_TIMEOUT
+    )
+
+
+def _fs_toggle_greeting(owner_id):
+    ref = _db.collection("businesses").document(str(owner_id))
+    doc = ref.get(timeout=FS_TIMEOUT)
+    d = doc.to_dict() if doc.exists else {}
+    new_enabled = not bool(d.get("greeting_enabled"))
+    upd = {"greeting_enabled": new_enabled}
+    if new_enabled:
+        upd["greeting_activated_at"] = time.time()
+    ref.set(upd, merge=True, timeout=FS_TIMEOUT)
+    return new_enabled
+
+
+def _fs_get_last_seen(owner_id, cust):
+    doc = _db.collection("seen").document(f"{owner_id}_{cust}").get(timeout=FS_TIMEOUT)
+    return doc.to_dict().get("ts") if doc.exists else None
+
+
+def _fs_set_last_seen(owner_id, cust, ts):
+    _db.collection("seen").document(f"{owner_id}_{cust}").set({"ts": ts}, timeout=FS_TIMEOUT)
+
+
 def _fs_ping():
     list(_db.collection("connections").limit(1).get(timeout=FS_TIMEOUT))
     return True
@@ -149,7 +186,7 @@ async def get_reply_context(conn_id):
         if owner_id:
             _cache_set(_owner_cache, conn_id, (owner_id, _now()))
     if not owner_id:
-        return None, False, [], False
+        return None, False, [], False, _greeting_of({})
 
     dcached = _data_cache.get(owner_id)
     if dcached and _now() - dcached[1] < CACHE_TTL:
@@ -158,7 +195,7 @@ async def get_reply_context(conn_id):
         data = await asyncio.to_thread(_fs_read_business, owner_id)
         _cache_set(_data_cache, owner_id, (data, _now()))
 
-    return owner_id, data["is_enabled"], data["rules"], _sub_active(data), data.get("default_reply") or ""
+    return owner_id, data["is_enabled"], data["rules"], _sub_active(data), _greeting_of(data)
 
 
 async def save_connection(owner_id, conn_id, enabled):
@@ -230,20 +267,33 @@ async def get_subscription(owner_id):
     return data["plan"], data["sub_expires"], _sub_active(data)
 
 
-def _fs_set_default_reply(owner_id, text):
-    _db.collection("businesses").document(str(owner_id)).set(
-        {"default_reply": text}, merge=True, timeout=FS_TIMEOUT
-    )
+async def get_greeting(owner_id):
+    data = await asyncio.to_thread(_fs_read_business, owner_id)
+    return _greeting_of(data)
 
 
-async def set_default_reply(owner_id, text):
-    await asyncio.to_thread(_fs_set_default_reply, owner_id, text)
+async def set_greeting_text(owner_id, text):
+    await asyncio.to_thread(_fs_set_greeting_field, owner_id, "greeting_text", text)
     _invalidate(owner_id)
 
 
-async def get_default_reply(owner_id):
-    data = await asyncio.to_thread(_fs_read_business, owner_id)
-    return data.get("default_reply") or ""
+async def set_greeting_hours(owner_id, hours):
+    await asyncio.to_thread(_fs_set_greeting_field, owner_id, "greeting_hours", hours)
+    _invalidate(owner_id)
+
+
+async def toggle_greeting(owner_id):
+    enabled = await asyncio.to_thread(_fs_toggle_greeting, owner_id)
+    _invalidate(owner_id)
+    return enabled
+
+
+async def get_last_seen(owner_id, cust):
+    return await asyncio.to_thread(_fs_get_last_seen, owner_id, cust)
+
+
+async def set_last_seen(owner_id, cust, ts):
+    await asyncio.to_thread(_fs_set_last_seen, owner_id, cust, ts)
 
 
 async def ping():
