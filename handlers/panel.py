@@ -47,11 +47,13 @@ async def add_reply(message: Message, state: FSMContext):
     await state.update_data(reply=message.text)
     await state.set_state(AddRule.buttons)
     await message.answer(
-        "أرسل الأزرار التفاعلية (اختياري) — سطر لكل زر بالصيغة:\n"
-        "<code>نص الزر | الرد عند الضغط</code>\n\n"
+        "أرسل الأزرار (اختياري) — سطر لكل زر بالصيغة <code>النص | القيمة</code>:\n\n"
+        "• لو القيمة <b>رابط</b> ← يصير زر رابط.\n"
+        "• لو القيمة <b>نص</b> ← يصير زر تفاعلي يرد عند الضغط.\n\n"
         "مثال:\n"
-        "الأسعار | أسعارنا تبدأ من ٥٠ ريال\n"
-        "التوصيل | نوصّل خلال ٢٤ ساعة\n\n"
+        "زيارة المتجر | https://store.example.com\n"
+        "واتساب | https://wa.me/9665XXXXXXXX\n"
+        "الأسعار | أسعارنا تبدأ من ٥٠ ريال\n\n"
         "أو اكتب «تخطي» بدون أزرار."
     )
 
@@ -62,10 +64,13 @@ async def add_buttons(message: Message, state: FSMContext):
     if (message.text or "").strip() != "تخطي":
         for line in (message.text or "").splitlines():
             if "|" in line:
-                text, _, reply = line.partition("|")
-                text, reply = text.strip(), reply.strip()
-                if text and reply:
-                    buttons.append({"text": text, "reply": reply})
+                text, _, val = line.partition("|")
+                text, val = text.strip(), val.strip()
+                if text and val:
+                    if val.startswith("http://") or val.startswith("https://"):
+                        buttons.append({"text": text, "url": val})
+                    else:
+                        buttons.append({"text": text, "reply": val})
 
     data = await state.get_data()
     await db.add_rule(

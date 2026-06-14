@@ -39,8 +39,10 @@ def rules_kb(rules) -> InlineKeyboardMarkup:
 def reply_inline_kb(rule_id, buttons):
     if not buttons:
         return None
-    rows = [
-        [InlineKeyboardButton(text=b["text"], callback_data=f"b:{rule_id}:{i}")]
-        for i, b in enumerate(buttons)
-    ]
+    rows = []
+    for i, b in enumerate(buttons):
+        if b.get("url"):
+            rows.append([InlineKeyboardButton(text=b["text"], url=b["url"])])
+        else:
+            rows.append([InlineKeyboardButton(text=b["text"], callback_data=f"b:{rule_id}:{i}")])
     return InlineKeyboardMarkup(inline_keyboard=rows)
