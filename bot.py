@@ -3,10 +3,12 @@ import logging
 from aiohttp import web
 from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
+from aiogram.client.session.aiohttp import AiohttpSession
 from aiogram.enums import ParseMode
 from aiogram.webhook.aiohttp_server import SimpleRequestHandler, setup_application
 
 import config
+import database as db
 from handlers import business, panel
 
 logging.basicConfig(level=logging.INFO)
@@ -14,8 +16,10 @@ logger = logging.getLogger(__name__)
 
 
 def create_app() -> web.Application:
+    session = AiohttpSession(timeout=60)
     bot = Bot(
         token=config.BOT_TOKEN,
+        session=session,
         default=DefaultBotProperties(parse_mode=ParseMode.HTML),
     )
 
@@ -46,11 +50,15 @@ def create_app() -> web.Application:
     app.on_startup.append(on_startup)
     app.on_shutdown.append(on_shutdown)
 
-    # فحص صحة للخدمة (Render يستخدمه + يبقي الخدمة حية)
     async def health(request):
         return web.Response(text="ok")
 
+    async def health_deep(request):
+        ok = await db.ping()
+        return web.json_response({"firestore": ok}, status=200 if ok else 503)
+
     app.router.add_get("/", health)
+    app.router.add_get("/health", health_deep)
 
     SimpleRequestHandler(
         dispatcher=dp,

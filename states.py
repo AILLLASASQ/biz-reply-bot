@@ -6,3 +6,7 @@ class AddRule(StatesGroup):
     match_type = State()
     reply = State()
     buttons = State()
+
+
+class EditField(StatesGroup):
+    value = State()

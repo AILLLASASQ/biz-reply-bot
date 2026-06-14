@@ -8,7 +8,7 @@ from aiogram.types import Message, CallbackQuery
 import config
 import database as db
 import keyboards as kb
-from states import AddRule
+from states import AddRule, EditField
 
 router = Router()
 
@@ -17,8 +17,37 @@ def _fmt_status(plan, exp, active):
     if not exp:
         return "لا يوجد اشتراك بعد."
     days_left = max(0, int((exp - time.time()) / 86400))
+    until = time.strftime("%Y-%m-%d", time.localtime(exp))
     state = "فعّال ✅" if active else "منتهٍ ❌"
-    return f"الباقة: {plan or '—'}\nالحالة: {state}\nالمتبقّي: {days_left} يوم"
+    return f"الباقة: {plan or '—'}\nالحالة: {state}\nينتهي: {until} ({days_left} يوم متبقٍّ)"
+
+
+def _rules_text(rules, page):
+    per = kb.RULES_PER_PAGE
+    chunk = rules[page * per : (page + 1) * per]
+    if not chunk:
+        return "لا توجد ردود."
+    lines = []
+    for r in chunk:
+        bc = len(r.get("buttons") or [])
+        extra = f" [{bc} زر]" if bc else ""
+        lines.append(f"• <b>{r['keyword']}</b> ← {r['reply']}{extra}")
+    return "\n".join(lines)
+
+
+def _parse_buttons(text):
+    buttons = []
+    if (text or "").strip() != "تخطي":
+        for line in (text or "").splitlines():
+            if "|" in line:
+                t, _, v = line.partition("|")
+                t, v = t.strip(), v.strip()
+                if t and v:
+                    if v.startswith("http://") or v.startswith("https://"):
+                        buttons.append({"text": t, "url": v})
+                    else:
+                        buttons.append({"text": t, "reply": v})
+    return buttons
 
 
 @router.message(CommandStart())
@@ -29,9 +58,36 @@ async def start(message: Message):
         "بوت الردود التلقائية لحساب <b>Telegram Business</b>.\n\n"
         f"حصلت على تجربة مجانية {config.TRIAL_DAYS} يوم.\n"
         "اربط البوت من: إعدادات تيليجرام ← Telegram Business ← Chatbots،\n"
-        "ثم أضف الكلمات والردود من الأزرار بالأسفل.",
+        "ثم أضف الكلمات والردود من الأزرار بالأسفل.\n\n"
+        "اكتب /help لعرض كل الأوامر.",
         reply_markup=kb.main_menu(),
     )
+
+
+@router.message(Command("menu"))
+async def menu_cmd(message: Message):
+    await message.answer("القائمة:", reply_markup=kb.main_menu())
+
+
+@router.message(Command("help"))
+async def help_cmd(message: Message):
+    text = (
+        "<b>الأزرار:</b>\n"
+        "➕ إضافة رد — كلمة + رد (مع أزرار اختيارية).\n"
+        "📋 قائمة الردود — عرض/تعديل/حذف الردود.\n"
+        "⏯ تشغيل / إيقاف — تفعيل أو إيقاف الردود.\n"
+        "💳 اشتراكي — حالة اشتراكك ومعرّفك.\n\n"
+        "<b>الأوامر:</b>\n"
+        "/menu — إظهار الأزرار.\n"
+        "/help — هذه المساعدة."
+    )
+    if message.from_user.id in config.ADMIN_IDS:
+        text += (
+            "\n\n<b>أوامر الأدمن:</b>\n"
+            "/activate &lt;ايدي&gt; &lt;أيام&gt; [باقة]\n"
+            "/sub &lt;ايدي&gt;"
+        )
+    await message.answer(text, reply_markup=kb.main_menu())
 
 
 @router.message(F.text == "💳 اشتراكي")
@@ -60,7 +116,7 @@ async def admin_activate(message: Message):
         await message.answer("عدد الأيام يجب أن يكون رقماً.")
         return
     plan = parts[3] if len(parts) > 3 else "paid"
-    exp = await db.set_subscription(owner_id, plan, days)
+    exp = await db.set_subscription(owner_id, plan, days, message.from_user.id)
     until = time.strftime("%Y-%m-%d", time.localtime(exp))
     await message.answer(f"✅ فُعّل اشتراك <code>{owner_id}</code>: {plan} — حتى {until}.")
 
@@ -104,8 +160,8 @@ async def add_reply(message: Message, state: FSMContext):
     await state.set_state(AddRule.buttons)
     await message.answer(
         "أرسل الأزرار (اختياري) — سطر لكل زر بالصيغة <code>النص | القيمة</code>:\n\n"
-        "• لو القيمة <b>رابط</b> ← يصير زر رابط.\n"
-        "• لو القيمة <b>نص</b> ← يصير زر تفاعلي يرد عند الضغط.\n\n"
+        "• لو القيمة <b>رابط</b> ← زر رابط.\n"
+        "• لو القيمة <b>نص</b> ← زر تفاعلي يرد عند الضغط.\n\n"
         "مثال:\n"
         "زيارة المتجر | https://store.example.com\n"
         "الأسعار | أسعارنا تبدأ من ٥٠ ريال\n\n"
@@ -115,18 +171,7 @@ async def add_reply(message: Message, state: FSMContext):
 
 @router.message(AddRule.buttons)
 async def add_buttons(message: Message, state: FSMContext):
-    buttons = []
-    if (message.text or "").strip() != "تخطي":
-        for line in (message.text or "").splitlines():
-            if "|" in line:
-                text, _, val = line.partition("|")
-                text, val = text.strip(), val.strip()
-                if text and val:
-                    if val.startswith("http://") or val.startswith("https://"):
-                        buttons.append({"text": text, "url": val})
-                    else:
-                        buttons.append({"text": text, "reply": val})
-
+    buttons = _parse_buttons(message.text)
     data = await state.get_data()
     await db.add_rule(
         message.from_user.id,
@@ -146,12 +191,20 @@ async def list_rules(message: Message):
     if not rules:
         await message.answer("لا توجد ردود بعد. أضف أول رد من الزر ➕")
         return
-    lines = []
-    for r in rules:
-        btn_count = len(r.get("buttons") or [])
-        extra = f" [{btn_count} زر]" if btn_count else ""
-        lines.append(f"• <b>{r['keyword']}</b> ← {r['reply']}{extra}")
-    await message.answer("\n".join(lines), reply_markup=kb.rules_kb(rules))
+    await message.answer(_rules_text(rules, 0), reply_markup=kb.rules_kb(rules, 0))
+
+
+@router.callback_query(F.data.startswith("page:"))
+async def page_nav(call: CallbackQuery):
+    page = int(call.data.split(":")[1])
+    rules = await db.get_rules(call.from_user.id)
+    await call.message.edit_text(_rules_text(rules, page), reply_markup=kb.rules_kb(rules, page))
+    await call.answer()
+
+
+@router.callback_query(F.data == "noop")
+async def noop(call: CallbackQuery):
+    await call.answer()
 
 
 @router.callback_query(F.data.startswith("del:"))
@@ -160,6 +213,54 @@ async def del_rule(call: CallbackQuery):
     await db.delete_rule(call.from_user.id, rule_id)
     await call.message.edit_text("🗑 تم حذف الرد.")
     await call.answer()
+
+
+@router.callback_query(F.data.startswith("edit:"))
+async def edit_open(call: CallbackQuery):
+    rule_id = call.data.split(":")[1]
+    await call.message.answer("وش تبي تعدّل؟", reply_markup=kb.edit_fields_kb(rule_id))
+    await call.answer()
+
+
+@router.callback_query(F.data.startswith("ef:"))
+async def edit_field(call: CallbackQuery, state: FSMContext):
+    _, field, rule_id = call.data.split(":", 2)
+    if field == "match":
+        await call.message.answer("اختر نوع المطابقة:", reply_markup=kb.edit_match_kb(rule_id))
+        await call.answer()
+        return
+    await state.set_state(EditField.value)
+    await state.update_data(edit_id=rule_id, edit_field=field)
+    prompts = {
+        "kw": "أرسل الكلمة المفتاحية الجديدة:",
+        "reply": "أرسل نص الرد الجديد:",
+        "buttons": "أرسل الأزرار الجديدة (سطر لكل زر: النص | القيمة)، أو «تخطي» لحذف كل الأزرار:",
+    }
+    await call.message.answer(prompts[field])
+    await call.answer()
+
+
+@router.callback_query(F.data.startswith("em:"))
+async def edit_match_set(call: CallbackQuery):
+    _, mtype, rule_id = call.data.split(":", 2)
+    await db.update_rule_field(call.from_user.id, rule_id, "match_type", mtype)
+    await call.message.edit_text("✅ تم تحديث نوع المطابقة.")
+    await call.answer()
+
+
+@router.message(EditField.value)
+async def edit_field_value(message: Message, state: FSMContext):
+    data = await state.get_data()
+    rule_id = data["edit_id"]
+    field = data["edit_field"]
+    if field == "kw":
+        await db.update_rule_field(message.from_user.id, rule_id, "keyword", message.text)
+    elif field == "reply":
+        await db.update_rule_field(message.from_user.id, rule_id, "reply", message.text)
+    elif field == "buttons":
+        await db.update_rule_field(message.from_user.id, rule_id, "buttons", _parse_buttons(message.text))
+    await state.clear()
+    await message.answer("✅ تم التعديل.", reply_markup=kb.main_menu())
 
 
 @router.message(F.text == "⏯ تشغيل / إيقاف")

@@ -24,13 +24,23 @@ def _init():
 _db = _init()
 
 CACHE_TTL = 60
+MAX_CACHE = 2000
+FS_TIMEOUT = 15
 
 _owner_cache = {}
 _data_cache = {}
+_ping_cache = {"ts": 0.0, "ok": False}
 
 
 def _now():
     return time.monotonic()
+
+
+def _cache_set(cache, key, value):
+    if len(cache) >= MAX_CACHE and key not in cache:
+        oldest = min(cache, key=lambda k: cache[k][1])
+        cache.pop(oldest, None)
+    cache[key] = value
 
 
 def _invalidate(owner_id):
@@ -43,12 +53,12 @@ def _sub_active(data):
 
 
 def _fs_read_owner_id(conn_id):
-    doc = _db.collection("connections").document(conn_id).get()
+    doc = _db.collection("connections").document(conn_id).get(timeout=FS_TIMEOUT)
     return doc.to_dict().get("owner_id") if doc.exists else None
 
 
 def _fs_read_business(owner_id):
-    doc = _db.collection("businesses").document(str(owner_id)).get()
+    doc = _db.collection("businesses").document(str(owner_id)).get(timeout=FS_TIMEOUT)
     if not doc.exists:
         return {"is_enabled": False, "rules": [], "plan": None, "sub_expires": 0}
     d = doc.to_dict()
@@ -62,41 +72,71 @@ def _fs_read_business(owner_id):
 
 def _fs_save_connection(owner_id, conn_id, enabled):
     _db.collection("businesses").document(str(owner_id)).set(
-        {"connection_id": conn_id, "is_enabled": enabled}, merge=True
+        {"connection_id": conn_id, "is_enabled": enabled}, merge=True, timeout=FS_TIMEOUT
     )
-    _db.collection("connections").document(conn_id).set({"owner_id": str(owner_id)})
+    _db.collection("connections").document(conn_id).set(
+        {"owner_id": str(owner_id)}, timeout=FS_TIMEOUT
+    )
 
 
 def _fs_set_enabled(owner_id, enabled):
     _db.collection("businesses").document(str(owner_id)).set(
-        {"is_enabled": enabled}, merge=True
+        {"is_enabled": enabled}, merge=True, timeout=FS_TIMEOUT
     )
 
 
 def _fs_set_rules(owner_id, rules):
     _db.collection("businesses").document(str(owner_id)).set(
-        {"rules": rules}, merge=True
+        {"rules": rules}, merge=True, timeout=FS_TIMEOUT
     )
 
 
 def _fs_ensure_trial(owner_id, days):
     ref = _db.collection("businesses").document(str(owner_id))
-    doc = ref.get()
+    doc = ref.get(timeout=FS_TIMEOUT)
     d = doc.to_dict() if doc.exists else {}
-    if not d.get("sub_expires"):
-        ref.set({"plan": "trial", "sub_expires": time.time() + days * 86400}, merge=True)
+    if not d.get("trial_used") and not d.get("sub_expires"):
+        ref.set(
+            {"plan": "trial", "sub_expires": time.time() + days * 86400, "trial_used": True},
+            merge=True, timeout=FS_TIMEOUT,
+        )
         return True
     return False
 
 
-def _fs_set_subscription(owner_id, plan, days):
+def _fs_set_subscription(owner_id, plan, days, admin_id=None):
     ref = _db.collection("businesses").document(str(owner_id))
-    doc = ref.get()
+    doc = ref.get(timeout=FS_TIMEOUT)
     d = doc.to_dict() if doc.exists else {}
     base = max(time.time(), d.get("sub_expires") or 0)
     new_exp = base + days * 86400
-    ref.set({"plan": plan, "sub_expires": new_exp}, merge=True)
+    ref.set({"plan": plan, "sub_expires": new_exp, "trial_used": True}, merge=True, timeout=FS_TIMEOUT)
+    _db.collection("activations").add(
+        {
+            "owner_id": str(owner_id),
+            "admin_id": str(admin_id) if admin_id else None,
+            "plan": plan,
+            "days": days,
+            "ts": time.time(),
+        },
+        timeout=FS_TIMEOUT,
+    )
     return new_exp
+
+
+def _fs_update_rule_field(owner_id, rule_id, field, value):
+    data = _fs_read_business(owner_id)
+    rules = data["rules"]
+    for r in rules:
+        if r.get("id") == rule_id:
+            r[field] = value
+            break
+    _fs_set_rules(owner_id, rules)
+
+
+def _fs_ping():
+    list(_db.collection("connections").limit(1).get(timeout=FS_TIMEOUT))
+    return True
 
 
 async def get_reply_context(conn_id):
@@ -106,7 +146,7 @@ async def get_reply_context(conn_id):
     else:
         owner_id = await asyncio.to_thread(_fs_read_owner_id, conn_id)
         if owner_id:
-            _owner_cache[conn_id] = (owner_id, _now())
+            _cache_set(_owner_cache, conn_id, (owner_id, _now()))
     if not owner_id:
         return None, False, [], False
 
@@ -115,14 +155,14 @@ async def get_reply_context(conn_id):
         data = dcached[0]
     else:
         data = await asyncio.to_thread(_fs_read_business, owner_id)
-        _data_cache[owner_id] = (data, _now())
+        _cache_set(_data_cache, owner_id, (data, _now()))
 
     return owner_id, data["is_enabled"], data["rules"], _sub_active(data)
 
 
 async def save_connection(owner_id, conn_id, enabled):
     await asyncio.to_thread(_fs_save_connection, owner_id, conn_id, enabled)
-    _owner_cache[conn_id] = (str(owner_id), _now())
+    _cache_set(_owner_cache, conn_id, (str(owner_id), _now()))
     _invalidate(owner_id)
 
 
@@ -146,8 +186,8 @@ async def add_rule(owner_id, keyword, reply, match_type, buttons=None):
     rules = data["rules"]
     rule = {
         "id": uuid.uuid4().hex[:8],
-        "keyword": keyword,
-        "reply": reply,
+        "keyword": (keyword or "").strip(),
+        "reply": (reply or "").strip(),
         "match_type": match_type,
         "buttons": buttons or [],
     }
@@ -155,6 +195,13 @@ async def add_rule(owner_id, keyword, reply, match_type, buttons=None):
     await asyncio.to_thread(_fs_set_rules, owner_id, rules)
     _invalidate(owner_id)
     return rule["id"]
+
+
+async def update_rule_field(owner_id, rule_id, field, value):
+    if isinstance(value, str):
+        value = value.strip()
+    await asyncio.to_thread(_fs_update_rule_field, owner_id, rule_id, field, value)
+    _invalidate(owner_id)
 
 
 async def delete_rule(owner_id, rule_id):
@@ -171,8 +218,8 @@ async def ensure_trial(owner_id, days):
     return created
 
 
-async def set_subscription(owner_id, plan, days):
-    exp = await asyncio.to_thread(_fs_set_subscription, owner_id, plan, days)
+async def set_subscription(owner_id, plan, days, admin_id=None):
+    exp = await asyncio.to_thread(_fs_set_subscription, owner_id, plan, days, admin_id)
     _invalidate(owner_id)
     return exp
 
@@ -180,3 +227,16 @@ async def set_subscription(owner_id, plan, days):
 async def get_subscription(owner_id):
     data = await asyncio.to_thread(_fs_read_business, owner_id)
     return data["plan"], data["sub_expires"], _sub_active(data)
+
+
+async def ping():
+    now = time.time()
+    if now - _ping_cache["ts"] < 30:
+        return _ping_cache["ok"]
+    try:
+        ok = await asyncio.to_thread(_fs_ping)
+    except Exception:
+        ok = False
+    _ping_cache["ts"] = now
+    _ping_cache["ok"] = ok
+    return ok
