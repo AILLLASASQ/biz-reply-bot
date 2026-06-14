@@ -34,3 +34,13 @@ def rules_kb(rules) -> InlineKeyboardMarkup:
     if not rows:
         rows = [[InlineKeyboardButton(text="لا توجد ردود", callback_data="noop")]]
     return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def reply_inline_kb(rule_id, buttons):
+    if not buttons:
+        return None
+    rows = [
+        [InlineKeyboardButton(text=b["text"], callback_data=f"b:{rule_id}:{i}")]
+        for i, b in enumerate(buttons)
+    ]
+    return InlineKeyboardMarkup(inline_keyboard=rows)

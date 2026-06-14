@@ -5,3 +5,4 @@ class AddRule(StatesGroup):
     keyword = State()
     match_type = State()
     reply = State()
+    buttons = State()

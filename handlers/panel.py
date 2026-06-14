@@ -14,10 +14,9 @@ router = Router()
 async def start(message: Message):
     await message.answer(
         "أهلاً بك 👋\n"
-        "هذا بوت الردود التلقائية لحساب <b>Telegram Business</b>.\n\n"
-        "1) اربط البوت من: إعدادات تيليجرام ← Telegram Business ← Chatbots.\n"
-        "2) أضف الكلمات والردود من الأزرار بالأسفل.\n"
-        "3) فعّل الردود وستعمل تلقائياً مع زبائنك.",
+        "بوت الردود التلقائية لحساب <b>Telegram Business</b>.\n\n"
+        "اربط البوت من: إعدادات تيليجرام ← Telegram Business ← Chatbots،\n"
+        "ثم أضف الكلمات والردود من الأزرار بالأسفل.",
         reply_markup=kb.main_menu(),
     )
 
@@ -45,15 +44,40 @@ async def add_match(call: CallbackQuery, state: FSMContext):
 
 @router.message(AddRule.reply)
 async def add_reply(message: Message, state: FSMContext):
+    await state.update_data(reply=message.text)
+    await state.set_state(AddRule.buttons)
+    await message.answer(
+        "أرسل الأزرار التفاعلية (اختياري) — سطر لكل زر بالصيغة:\n"
+        "<code>نص الزر | الرد عند الضغط</code>\n\n"
+        "مثال:\n"
+        "الأسعار | أسعارنا تبدأ من ٥٠ ريال\n"
+        "التوصيل | نوصّل خلال ٢٤ ساعة\n\n"
+        "أو اكتب «تخطي» بدون أزرار."
+    )
+
+
+@router.message(AddRule.buttons)
+async def add_buttons(message: Message, state: FSMContext):
+    buttons = []
+    if (message.text or "").strip() != "تخطي":
+        for line in (message.text or "").splitlines():
+            if "|" in line:
+                text, _, reply = line.partition("|")
+                text, reply = text.strip(), reply.strip()
+                if text and reply:
+                    buttons.append({"text": text, "reply": reply})
+
     data = await state.get_data()
     await db.add_rule(
         message.from_user.id,
         data["keyword"],
-        message.text,
+        data["reply"],
         data.get("match_type", "contains"),
+        buttons,
     )
     await state.clear()
-    await message.answer("✅ تم حفظ الرد.", reply_markup=kb.main_menu())
+    note = f" مع {len(buttons)} زر" if buttons else ""
+    await message.answer(f"✅ تم حفظ الرد{note}.", reply_markup=kb.main_menu())
 
 
 @router.message(F.text == "📋 قائمة الردود")
@@ -62,8 +86,12 @@ async def list_rules(message: Message):
     if not rules:
         await message.answer("لا توجد ردود بعد. أضف أول رد من الزر ➕")
         return
-    text = "\n".join([f"• <b>{r['keyword']}</b> ← {r['reply']}" for r in rules])
-    await message.answer(text, reply_markup=kb.rules_kb(rules))
+    lines = []
+    for r in rules:
+        btn_count = len(r.get("buttons") or [])
+        extra = f" [{btn_count} زر]" if btn_count else ""
+        lines.append(f"• <b>{r['keyword']}</b> ← {r['reply']}{extra}")
+    await message.answer("\n".join(lines), reply_markup=kb.rules_kb(rules))
 
 
 @router.callback_query(F.data.startswith("del:"))
