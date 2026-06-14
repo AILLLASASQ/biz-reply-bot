@@ -1,4 +1,6 @@
 import json
+import time
+import uuid
 import asyncio
 
 import firebase_admin
@@ -24,91 +26,112 @@ def _init():
 
 _db = _init()
 
+CACHE_TTL = 60  # ثواني
 
-# ============ الدوال المتزامنة (تُنفّذ في ثريد منفصل) ============
-
-def _save_connection(owner_id, connection_id, enabled):
-    _db.collection("businesses").document(str(owner_id)).set(
-        {"connection_id": connection_id, "is_enabled": enabled},
-        merge=True,
-    )
-    _db.collection("connections").document(connection_id).set(
-        {"owner_id": str(owner_id)}
-    )
+_owner_cache = {}   # conn_id -> (owner_id, ts)
+_data_cache = {}    # owner_id -> (data, ts) ; data = {"is_enabled": bool, "rules": [...]}
 
 
-def _get_owner(connection_id):
-    doc = _db.collection("connections").document(connection_id).get()
+def _now():
+    return time.monotonic()
+
+
+def _invalidate(owner_id):
+    _data_cache.pop(str(owner_id), None)
+
+
+def _fs_read_owner_id(conn_id):
+    doc = _db.collection("connections").document(conn_id).get()
     return doc.to_dict().get("owner_id") if doc.exists else None
 
 
-def _set_enabled(owner_id, enabled):
+def _fs_read_business(owner_id):
+    doc = _db.collection("businesses").document(str(owner_id)).get()
+    if not doc.exists:
+        return {"is_enabled": False, "rules": []}
+    d = doc.to_dict()
+    return {"is_enabled": bool(d.get("is_enabled")), "rules": d.get("rules", [])}
+
+
+def _fs_save_connection(owner_id, conn_id, enabled):
+    _db.collection("businesses").document(str(owner_id)).set(
+        {"connection_id": conn_id, "is_enabled": enabled}, merge=True
+    )
+    _db.collection("connections").document(conn_id).set({"owner_id": str(owner_id)})
+
+
+def _fs_set_enabled(owner_id, enabled):
     _db.collection("businesses").document(str(owner_id)).set(
         {"is_enabled": enabled}, merge=True
     )
 
 
-def _is_enabled(owner_id):
-    doc = _db.collection("businesses").document(str(owner_id)).get()
-    return bool(doc.to_dict().get("is_enabled")) if doc.exists else False
-
-
-def _add_rule(owner_id, keyword, reply, match_type):
-    ref = (
-        _db.collection("businesses")
-        .document(str(owner_id))
-        .collection("rules")
-        .document()
-    )
-    ref.set({"keyword": keyword, "reply": reply, "match_type": match_type})
-    return ref.id
-
-
-def _get_rules(owner_id):
-    docs = (
-        _db.collection("businesses")
-        .document(str(owner_id))
-        .collection("rules")
-        .stream()
-    )
-    return [{"id": d.id, **d.to_dict()} for d in docs]
-
-
-def _delete_rule(owner_id, rule_id):
-    (
-        _db.collection("businesses")
-        .document(str(owner_id))
-        .collection("rules")
-        .document(rule_id)
-        .delete()
+def _fs_set_rules(owner_id, rules):
+    _db.collection("businesses").document(str(owner_id)).set(
+        {"rules": rules}, merge=True
     )
 
 
-# ============ أغلفة غير متزامنة (لمنع حجب حلقة الأحداث) ============
+async def get_reply_context(conn_id):
+    """يرجع (owner_id, is_enabled, rules). صفر قراءات عند تسخين الكاش."""
+    cached = _owner_cache.get(conn_id)
+    if cached and _now() - cached[1] < CACHE_TTL:
+        owner_id = cached[0]
+    else:
+        owner_id = await asyncio.to_thread(_fs_read_owner_id, conn_id)
+        if owner_id:
+            _owner_cache[conn_id] = (owner_id, _now())
+    if not owner_id:
+        return None, False, []
 
-async def save_connection(owner_id, connection_id, enabled):
-    return await asyncio.to_thread(_save_connection, owner_id, connection_id, enabled)
+    dcached = _data_cache.get(owner_id)
+    if dcached and _now() - dcached[1] < CACHE_TTL:
+        data = dcached[0]
+    else:
+        data = await asyncio.to_thread(_fs_read_business, owner_id)
+        _data_cache[owner_id] = (data, _now())
+
+    return owner_id, data["is_enabled"], data["rules"]
 
 
-async def get_owner(connection_id):
-    return await asyncio.to_thread(_get_owner, connection_id)
-
-
-async def set_enabled(owner_id, enabled):
-    return await asyncio.to_thread(_set_enabled, owner_id, enabled)
+async def save_connection(owner_id, conn_id, enabled):
+    await asyncio.to_thread(_fs_save_connection, owner_id, conn_id, enabled)
+    _owner_cache[conn_id] = (str(owner_id), _now())
+    _invalidate(owner_id)
 
 
 async def is_enabled(owner_id):
-    return await asyncio.to_thread(_is_enabled, owner_id)
+    data = await asyncio.to_thread(_fs_read_business, owner_id)
+    return data["is_enabled"]
 
 
-async def add_rule(owner_id, keyword, reply, match_type):
-    return await asyncio.to_thread(_add_rule, owner_id, keyword, reply, match_type)
+async def set_enabled(owner_id, enabled):
+    await asyncio.to_thread(_fs_set_enabled, owner_id, enabled)
+    _invalidate(owner_id)
 
 
 async def get_rules(owner_id):
-    return await asyncio.to_thread(_get_rules, owner_id)
+    data = await asyncio.to_thread(_fs_read_business, owner_id)
+    return data["rules"]
+
+
+async def add_rule(owner_id, keyword, reply, match_type):
+    data = await asyncio.to_thread(_fs_read_business, owner_id)
+    rules = data["rules"]
+    rule = {
+        "id": uuid.uuid4().hex[:8],
+        "keyword": keyword,
+        "reply": reply,
+        "match_type": match_type,
+    }
+    rules.append(rule)
+    await asyncio.to_thread(_fs_set_rules, owner_id, rules)
+    _invalidate(owner_id)
+    return rule["id"]
 
 
 async def delete_rule(owner_id, rule_id):
-    return await asyncio.to_thread(_delete_rule, owner_id, rule_id)
+    data = await asyncio.to_thread(_fs_read_business, owner_id)
+    rules = [r for r in data["rules"] if r.get("id") != rule_id]
+    await asyncio.to_thread(_fs_set_rules, owner_id, rules)
+    _invalidate(owner_id)

@@ -27,19 +27,14 @@ async def on_message(message: Message, bot: Bot):
     if not conn_id:
         return
 
-    owner_id = await db.get_owner(conn_id)
-    if not owner_id:
+    owner_id, enabled, rules = await db.get_reply_context(conn_id)
+    if not owner_id or not enabled:
         return
 
     if message.from_user and str(message.from_user.id) == str(owner_id):
         return
 
-    if not await db.is_enabled(owner_id):
-        return
-
     text = message.text.lower().strip()
-    rules = await db.get_rules(owner_id)
-
     for rule in rules:
         kw = (rule.get("keyword") or "").lower().strip()
         if not kw:
