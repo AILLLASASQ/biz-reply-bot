@@ -40,7 +40,6 @@ def create_app() -> web.Application:
         logger.info("Webhook set to: %s", config.WEBHOOK_URL)
 
     async def on_shutdown(app: web.Application):
-        await bot.delete_webhook()
         await bot.session.close()
 
     app = web.Application()
