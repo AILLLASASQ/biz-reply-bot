@@ -1,0 +1,10 @@
+__pycache__/
+*.py[cod]
+.env
+.venv/
+venv/
+
+# ملف الخدمة الحساس — لا ترفعه أبداً
+serviceAccount.json
+serviceAccount*.json
+*-firebase-adminsdk-*.json

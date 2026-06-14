@@ -1,0 +1,16 @@
+services:
+  - type: web
+    name: telegram-business-autoreply
+    runtime: python
+    plan: starter          # تجنّب free لأنه ينام بعد الخمول ويفقد الرسائل
+    buildCommand: pip install -r requirements.txt
+    startCommand: python bot.py
+    envVars:
+      - key: BOT_TOKEN
+        sync: false
+      - key: BASE_WEBHOOK_URL
+        sync: false
+      - key: WEBHOOK_SECRET
+        sync: false
+      - key: FIREBASE_CREDENTIALS_JSON
+        sync: false
