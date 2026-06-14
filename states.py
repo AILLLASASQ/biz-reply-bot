@@ -10,3 +10,7 @@ class AddRule(StatesGroup):
 
 class EditField(StatesGroup):
     value = State()
+
+
+class DefaultReply(StatesGroup):
+    text = State()

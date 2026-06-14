@@ -60,13 +60,14 @@ def _fs_read_owner_id(conn_id):
 def _fs_read_business(owner_id):
     doc = _db.collection("businesses").document(str(owner_id)).get(timeout=FS_TIMEOUT)
     if not doc.exists:
-        return {"is_enabled": False, "rules": [], "plan": None, "sub_expires": 0}
+        return {"is_enabled": False, "rules": [], "plan": None, "sub_expires": 0, "default_reply": ""}
     d = doc.to_dict()
     return {
         "is_enabled": bool(d.get("is_enabled")),
         "rules": d.get("rules", []),
         "plan": d.get("plan"),
         "sub_expires": d.get("sub_expires") or 0,
+        "default_reply": d.get("default_reply") or "",
     }
 
 
@@ -157,7 +158,7 @@ async def get_reply_context(conn_id):
         data = await asyncio.to_thread(_fs_read_business, owner_id)
         _cache_set(_data_cache, owner_id, (data, _now()))
 
-    return owner_id, data["is_enabled"], data["rules"], _sub_active(data)
+    return owner_id, data["is_enabled"], data["rules"], _sub_active(data), data.get("default_reply") or ""
 
 
 async def save_connection(owner_id, conn_id, enabled):
@@ -227,6 +228,22 @@ async def set_subscription(owner_id, plan, days, admin_id=None):
 async def get_subscription(owner_id):
     data = await asyncio.to_thread(_fs_read_business, owner_id)
     return data["plan"], data["sub_expires"], _sub_active(data)
+
+
+def _fs_set_default_reply(owner_id, text):
+    _db.collection("businesses").document(str(owner_id)).set(
+        {"default_reply": text}, merge=True, timeout=FS_TIMEOUT
+    )
+
+
+async def set_default_reply(owner_id, text):
+    await asyncio.to_thread(_fs_set_default_reply, owner_id, text)
+    _invalidate(owner_id)
+
+
+async def get_default_reply(owner_id):
+    data = await asyncio.to_thread(_fs_read_business, owner_id)
+    return data.get("default_reply") or ""
 
 
 async def ping():

@@ -30,7 +30,7 @@ async def on_message(message: Message, bot: Bot):
     if not conn_id:
         return
 
-    owner_id, enabled, rules, sub_active = await db.get_reply_context(conn_id)
+    owner_id, enabled, rules, sub_active, default_reply = await db.get_reply_context(conn_id)
     if not owner_id or not enabled or not sub_active:
         return
 
@@ -38,6 +38,7 @@ async def on_message(message: Message, bot: Bot):
         return
 
     text = message.text.lower().strip()
+    matched = False
     for rule in rules:
         kw = (rule.get("keyword") or "").lower().strip()
         if not kw:
@@ -53,7 +54,15 @@ async def on_message(message: Message, bot: Bot):
                 business_connection_id=conn_id,
                 reply_markup=kb.reply_inline_kb(rule.get("id"), rule.get("buttons")),
             )
+            matched = True
             break
+
+    if not matched and default_reply:
+        await bot.send_message(
+            chat_id=message.chat.id,
+            text=default_reply,
+            business_connection_id=conn_id,
+        )
 
 
 @router.callback_query(F.data.startswith("b:"))
@@ -76,7 +85,7 @@ async def on_button(call: CallbackQuery, bot: Bot):
     if not conn_id:
         return
 
-    owner_id, enabled, rules, sub_active = await db.get_reply_context(conn_id)
+    owner_id, enabled, rules, sub_active, _ = await db.get_reply_context(conn_id)
     if not owner_id or not sub_active:
         return
 

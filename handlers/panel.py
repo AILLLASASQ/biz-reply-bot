@@ -8,7 +8,7 @@ from aiogram.types import Message, CallbackQuery
 import config
 import database as db
 import keyboards as kb
-from states import AddRule, EditField
+from states import AddRule, EditField, DefaultReply
 
 router = Router()
 
@@ -261,6 +261,33 @@ async def edit_field_value(message: Message, state: FSMContext):
         await db.update_rule_field(message.from_user.id, rule_id, "buttons", _parse_buttons(message.text))
     await state.clear()
     await message.answer("✅ تم التعديل.", reply_markup=kb.main_menu())
+
+
+@router.message(F.text == "🤖 الرد الافتراضي")
+async def default_reply_menu(message: Message, state: FSMContext):
+    current = await db.get_default_reply(message.from_user.id)
+    cur_txt = current if current else "غير مفعّل"
+    await state.set_state(DefaultReply.text)
+    await message.answer(
+        f"الرد الافتراضي الحالي:\n{cur_txt}\n\n"
+        "أرسل النص الجديد للرد على أي رسالة <b>غير مطابقة</b> لأي كلمة،\n"
+        "أو «إيقاف» لتعطيله، أو «إلغاء» للخروج."
+    )
+
+
+@router.message(DefaultReply.text)
+async def default_reply_set(message: Message, state: FSMContext):
+    txt = (message.text or "").strip()
+    await state.clear()
+    if txt == "إلغاء":
+        await message.answer("تم الإلغاء.", reply_markup=kb.main_menu())
+        return
+    if txt == "إيقاف":
+        await db.set_default_reply(message.from_user.id, "")
+        await message.answer("تم إيقاف الرد الافتراضي.", reply_markup=kb.main_menu())
+        return
+    await db.set_default_reply(message.from_user.id, txt)
+    await message.answer("✅ تم تعيين الرد الافتراضي.", reply_markup=kb.main_menu())
 
 
 @router.message(F.text == "⏯ تشغيل / إيقاف")

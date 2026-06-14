@@ -16,7 +16,7 @@ def _trunc(t, n=30):
 def main_menu() -> ReplyKeyboardMarkup:
     return ReplyKeyboardMarkup(
         keyboard=[
-            [KeyboardButton(text="➕ إضافة رد")],
+            [KeyboardButton(text="➕ إضافة رد"), KeyboardButton(text="🤖 الرد الافتراضي")],
             [KeyboardButton(text="📋 قائمة الردود")],
             [KeyboardButton(text="⏯ تشغيل / إيقاف"), KeyboardButton(text="💳 اشتراكي")],
         ],
