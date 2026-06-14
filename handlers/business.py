@@ -1,6 +1,7 @@
 from aiogram import Router, Bot, F
 from aiogram.types import BusinessConnection, Message, CallbackQuery
 
+import config
 import database as db
 import keyboards as kb
 
@@ -17,6 +18,7 @@ async def on_connect(conn: BusinessConnection):
 
     enabled = bool(conn.is_enabled) and can_reply
     await db.save_connection(conn.user.id, conn.id, enabled)
+    await db.ensure_trial(conn.user.id, config.TRIAL_DAYS)
 
 
 @router.business_message(F.text)
@@ -28,8 +30,8 @@ async def on_message(message: Message, bot: Bot):
     if not conn_id:
         return
 
-    owner_id, enabled, rules = await db.get_reply_context(conn_id)
-    if not owner_id or not enabled:
+    owner_id, enabled, rules, sub_active = await db.get_reply_context(conn_id)
+    if not owner_id or not enabled or not sub_active:
         return
 
     if message.from_user and str(message.from_user.id) == str(owner_id):
@@ -74,8 +76,8 @@ async def on_button(call: CallbackQuery, bot: Bot):
     if not conn_id:
         return
 
-    owner_id, enabled, rules = await db.get_reply_context(conn_id)
-    if not owner_id:
+    owner_id, enabled, rules, sub_active = await db.get_reply_context(conn_id)
+    if not owner_id or not sub_active:
         return
 
     rule = next((r for r in rules if r.get("id") == rule_id), None)

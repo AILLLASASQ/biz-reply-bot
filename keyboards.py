@@ -11,7 +11,7 @@ def main_menu() -> ReplyKeyboardMarkup:
         keyboard=[
             [KeyboardButton(text="➕ إضافة رد")],
             [KeyboardButton(text="📋 قائمة الردود")],
-            [KeyboardButton(text="⏯ تشغيل / إيقاف")],
+            [KeyboardButton(text="⏯ تشغيل / إيقاف"), KeyboardButton(text="💳 اشتراكي")],
         ],
         resize_keyboard=True,
     )
