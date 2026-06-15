@@ -8,7 +8,7 @@ from aiogram.types import Message, CallbackQuery
 import config
 import database as db
 import keyboards as kb
-from states import AddRule, EditField, Greeting
+from states import AddRule, EditField, Greeting, Buttons
 
 router = Router()
 
@@ -33,21 +33,6 @@ def _rules_text(rules, page):
         extra = f" [{bc} زر]" if bc else ""
         lines.append(f"• <b>{r['keyword']}</b> ← {r['reply']}{extra}")
     return "\n".join(lines)
-
-
-def _parse_buttons(text):
-    buttons = []
-    if (text or "").strip() != "تخطي":
-        for line in (text or "").splitlines():
-            if "|" in line:
-                t, _, v = line.partition("|")
-                t, v = t.strip(), v.strip()
-                if t and v:
-                    if v.startswith("http://") or v.startswith("https://"):
-                        buttons.append({"text": t, "url": v})
-                    else:
-                        buttons.append({"text": t, "reply": v})
-    return buttons
 
 
 @router.message(CommandStart())
@@ -134,6 +119,7 @@ async def admin_sub(message: Message):
     await message.answer(f"اشتراك <code>{parts[1]}</code>:\n{_fmt_status(plan, exp, active)}")
 
 
+# ===== إضافة رد =====
 @router.message(F.text == "➕ إضافة رد")
 async def add_start(message: Message, state: FSMContext):
     await state.set_state(AddRule.keyword)
@@ -151,41 +137,72 @@ async def add_keyword(message: Message, state: FSMContext):
 async def add_match(call: CallbackQuery, state: FSMContext):
     await state.update_data(match_type=call.data.split(":")[1])
     await state.set_state(AddRule.reply)
-    await call.message.answer("الآن أرسل نص الرد:")
+    await call.message.answer("الآن أرسل نص الرد (يمكن أن يكون طويلاً ومرتباً بالأسطر):")
     await call.answer()
 
 
 @router.message(AddRule.reply)
 async def add_reply(message: Message, state: FSMContext):
-    await state.update_data(reply=message.text)
-    await state.set_state(AddRule.buttons)
+    await state.update_data(reply=message.text, btns=[], btn_mode="add")
+    await state.set_state(Buttons.label)
     await message.answer(
-        "أرسل الأزرار (اختياري) — سطر لكل زر بالصيغة <code>النص | القيمة</code>:\n\n"
-        "• لو القيمة <b>رابط</b> ← زر رابط.\n"
-        "• لو القيمة <b>نص</b> ← زر تفاعلي يرد عند الضغط.\n\n"
-        "مثال:\n"
-        "زيارة المتجر | https://store.example.com\n"
-        "الأسعار | أسعارنا تبدأ من ٥٠ ريال\n\n"
-        "أو اكتب «تخطي» بدون أزرار."
+        "تبي تضيف أزرار للرد؟\n"
+        "أرسل <b>اسم الزر</b> الأول، أو اكتب «تخطي» للحفظ بدون أزرار."
     )
 
 
-@router.message(AddRule.buttons)
-async def add_buttons(message: Message, state: FSMContext):
-    buttons = _parse_buttons(message.text)
+# ===== تدفّق الأزرار (إضافة وتعديل) =====
+async def _finalize_buttons(message: Message, state: FSMContext):
     data = await state.get_data()
-    await db.add_rule(
-        message.from_user.id,
-        data["keyword"],
-        data["reply"],
-        data.get("match_type", "contains"),
-        buttons,
-    )
+    btns = data.get("btns", [])
+    if data.get("btn_mode") == "edit":
+        await db.update_rule_field(message.from_user.id, data["edit_id"], "buttons", btns)
+        msg = "✅ تم تحديث أزرار الرد."
+    else:
+        await db.add_rule(
+            message.from_user.id,
+            data["keyword"],
+            data["reply"],
+            data.get("match_type", "contains"),
+            btns,
+        )
+        msg = f"✅ تم حفظ الرد{f' مع {len(btns)} زر' if btns else ''}."
     await state.clear()
-    note = f" مع {len(buttons)} زر" if buttons else ""
-    await message.answer(f"✅ تم حفظ الرد{note}.", reply_markup=kb.main_menu())
+    await message.answer(msg, reply_markup=kb.main_menu())
 
 
+@router.message(Buttons.label)
+async def btn_label(message: Message, state: FSMContext):
+    label = (message.text or "").strip()
+    if label == "تخطي":
+        await _finalize_buttons(message, state)
+        return
+    await state.update_data(pending_label=label)
+    await state.set_state(Buttons.value)
+    await message.answer(
+        "أرسل <b>رد هذا الزر</b> — نص طويل/مرتب بالأسطر، أو رابط (يبدأ بـ http)."
+    )
+
+
+@router.message(Buttons.value)
+async def btn_value(message: Message, state: FSMContext):
+    val = (message.text or "").strip()
+    data = await state.get_data()
+    label = data.get("pending_label", "زر")
+    btns = data.get("btns", [])
+    if val.startswith("http://") or val.startswith("https://"):
+        btns.append({"text": label, "url": val})
+    else:
+        btns.append({"text": label, "reply": val})
+    await state.update_data(btns=btns)
+    await state.set_state(Buttons.label)
+    await message.answer(
+        f"✅ أُضيف الزر «{label}».\n"
+        "أرسل اسم الزر التالي، أو «تخطي» للحفظ."
+    )
+
+
+# ===== قائمة الردود + الترقيم =====
 @router.message(F.text == "📋 قائمة الردود")
 async def list_rules(message: Message):
     rules = await db.get_rules(message.from_user.id)
@@ -216,6 +233,7 @@ async def del_rule(call: CallbackQuery):
     await call.answer()
 
 
+# ===== تعديل رد =====
 @router.callback_query(F.data.startswith("edit:"))
 async def edit_open(call: CallbackQuery):
     rule_id = call.data.split(":")[1]
@@ -230,12 +248,19 @@ async def edit_field(call: CallbackQuery, state: FSMContext):
         await call.message.answer("اختر نوع المطابقة:", reply_markup=kb.edit_match_kb(rule_id))
         await call.answer()
         return
+    if field == "buttons":
+        await state.update_data(btns=[], btn_mode="edit", edit_id=rule_id)
+        await state.set_state(Buttons.label)
+        await call.message.answer(
+            "تعديل الأزرار — أرسل <b>اسم الزر</b> الأول، أو «تخطي» لجعل الرد بدون أزرار."
+        )
+        await call.answer()
+        return
     await state.set_state(EditField.value)
     await state.update_data(edit_id=rule_id, edit_field=field)
     prompts = {
         "kw": "أرسل الكلمة المفتاحية الجديدة:",
-        "reply": "أرسل نص الرد الجديد:",
-        "buttons": "أرسل الأزرار الجديدة (سطر لكل زر: النص | القيمة)، أو «تخطي» لحذف كل الأزرار:",
+        "reply": "أرسل نص الرد الجديد (يمكن أن يكون طويلاً ومرتباً بالأسطر):",
     }
     await call.message.answer(prompts[field])
     await call.answer()
@@ -258,12 +283,11 @@ async def edit_field_value(message: Message, state: FSMContext):
         await db.update_rule_field(message.from_user.id, rule_id, "keyword", message.text)
     elif field == "reply":
         await db.update_rule_field(message.from_user.id, rule_id, "reply", message.text)
-    elif field == "buttons":
-        await db.update_rule_field(message.from_user.id, rule_id, "buttons", _parse_buttons(message.text))
     await state.clear()
     await message.answer("✅ تم التعديل.", reply_markup=kb.main_menu())
 
 
+# ===== الترحيب =====
 def _greeting_status(g):
     state = "مفعّل ✅" if g["enabled"] else "موقوف ⏸"
     txt = g["text"] or "— (لم يُحدّد بعد)"

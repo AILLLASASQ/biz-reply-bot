@@ -5,7 +5,6 @@ class AddRule(StatesGroup):
     keyword = State()
     match_type = State()
     reply = State()
-    buttons = State()
 
 
 class EditField(StatesGroup):
@@ -15,3 +14,8 @@ class EditField(StatesGroup):
 class Greeting(StatesGroup):
     text = State()
     hours = State()
+
+
+class Buttons(StatesGroup):
+    label = State()
+    value = State()
