@@ -6,8 +6,11 @@ from aiogram.types import BusinessConnection, Message, CallbackQuery
 import config
 import database as db
 import keyboards as kb
+import calc
 
 router = Router()
+
+_calc_state = {}
 
 
 @router.business_connection()
@@ -23,6 +26,64 @@ async def on_connect(conn: BusinessConnection):
     await db.ensure_trial(conn.user.id, config.TRIAL_DAYS)
 
 
+async def _save_and_reply_calc(message, bot, conn_id, owner_id, customer_id, you, opp):
+    yp, op, win, loss = calc.compute(you, opp)
+    await bot.send_message(
+        chat_id=message.chat.id,
+        text=calc.format_result(you, opp),
+        business_connection_id=conn_id,
+    )
+    await db.add_calc_history(
+        owner_id,
+        str(customer_id),
+        {"you": you, "opp": opp, "yp": yp, "op": op, "win": win, "loss": loss, "ts": time.time()},
+    )
+
+
+async def _start_calc(message, bot, conn_id, owner_id, customer_id, text, key):
+    parts = text.split()
+    nums = [calc.parse_number(p) for p in parts[1:]]
+    nums = [n for n in nums if n is not None]
+    if len(nums) >= 2:
+        await _save_and_reply_calc(message, bot, conn_id, owner_id, customer_id, nums[0], nums[1])
+        return
+    _calc_state[key] = {"step": "you"}
+    await bot.send_message(
+        chat_id=message.chat.id,
+        text="🧮 أرسل شعبيتك (أو «إلغاء»):",
+        business_connection_id=conn_id,
+    )
+
+
+async def _handle_calc_step(message, bot, conn_id, owner_id, customer_id, text, st, key):
+    if text in ("إلغاء", "الغاء"):
+        _calc_state.pop(key, None)
+        await bot.send_message(
+            chat_id=message.chat.id, text="أُلغيت الحاسبة.", business_connection_id=conn_id
+        )
+        return
+    n = calc.parse_number(text)
+    if n is None:
+        await bot.send_message(
+            chat_id=message.chat.id,
+            text="أرسل رقماً صحيحاً (أو «إلغاء»).",
+            business_connection_id=conn_id,
+        )
+        return
+    if st["step"] == "you":
+        st["you"] = n
+        st["step"] = "opp"
+        await bot.send_message(
+            chat_id=message.chat.id,
+            text="🔴 أرسل شعبية الخصم:",
+            business_connection_id=conn_id,
+        )
+        return
+    you = st.get("you", 0)
+    _calc_state.pop(key, None)
+    await _save_and_reply_calc(message, bot, conn_id, owner_id, customer_id, you, n)
+
+
 @router.business_message(F.text)
 async def on_message(message: Message, bot: Bot):
     if message.from_user and message.from_user.is_bot:
@@ -32,7 +93,7 @@ async def on_message(message: Message, bot: Bot):
     if not conn_id:
         return
 
-    owner_id, enabled, rules, sub_active, greeting = await db.get_reply_context(conn_id)
+    owner_id, enabled, rules, sub_active, greeting, calc_enabled = await db.get_reply_context(conn_id)
     if not owner_id or not enabled or not sub_active:
         return
 
@@ -40,6 +101,27 @@ async def on_message(message: Message, bot: Bot):
         return
     if str(message.from_user.id) == str(owner_id):
         return
+
+    customer_id = message.from_user.id
+    text = (message.text or "").strip()
+    key = (conn_id, str(customer_id))
+
+    if calc_enabled:
+        st = _calc_state.get(key)
+        if st is not None:
+            await _handle_calc_step(message, bot, conn_id, owner_id, customer_id, text, st, key)
+            return
+        if text in ("سجلي", "عملياتي"):
+            ops = await db.get_calc_history(owner_id, str(customer_id))
+            await bot.send_message(
+                chat_id=message.chat.id,
+                text=calc.format_history(ops),
+                business_connection_id=conn_id,
+            )
+            return
+        if text == "حاسبة" or text.startswith("حاسبة "):
+            await _start_calc(message, bot, conn_id, owner_id, customer_id, text, key)
+            return
 
     if greeting["enabled"] and greeting["text"]:
         cust = str(message.from_user.id)
@@ -59,15 +141,15 @@ async def on_message(message: Message, bot: Bot):
                 business_connection_id=conn_id,
             )
 
-    text = message.text.lower().strip()
+    low = text.lower()
     for rule in rules:
         kw = (rule.get("keyword") or "").lower().strip()
         if not kw:
             continue
         if rule.get("match_type") == "exact":
-            hit = text == kw
+            hit = low == kw
         else:
-            hit = kw in text
+            hit = kw in low
         if hit:
             await bot.send_message(
                 chat_id=message.chat.id,
@@ -98,7 +180,7 @@ async def on_button(call: CallbackQuery, bot: Bot):
     if not conn_id:
         return
 
-    owner_id, enabled, rules, sub_active, _ = await db.get_reply_context(conn_id)
+    owner_id, enabled, rules, sub_active, _, _ = await db.get_reply_context(conn_id)
     if not owner_id or not sub_active:
         return
 

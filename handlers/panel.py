@@ -347,6 +347,29 @@ async def greeting_toggle(call: CallbackQuery):
     await call.answer()
 
 
+# ===== الحاسبة =====
+@router.message(F.text == "🧮 الحاسبة")
+async def calc_menu(message: Message):
+    enabled = await db.get_calc_enabled(message.from_user.id)
+    state = "مفعّلة ✅" if enabled else "موقوفة ⏸"
+    await message.answer(
+        "🧮 حاسبة الشعبية (الفردية)\n"
+        f"الحالة: {state}\n\n"
+        "لما تكون مفعّلة، الزبون في الخاص يكتب:\n"
+        "• «حاسبة 55555 7» ← نتيجة فورية\n"
+        "• أو «حاسبة» ← يسأله خطوة بخطوة\n"
+        "• «سجلي» ← آخر ٣ عملياته",
+        reply_markup=kb.calc_menu_kb(enabled),
+    )
+
+
+@router.callback_query(F.data == "calc:toggle")
+async def calc_toggle(call: CallbackQuery):
+    enabled = await db.toggle_calc(call.from_user.id)
+    await call.message.edit_text("▶️ تم تفعيل الحاسبة." if enabled else "⏸ تم إيقاف الحاسبة.")
+    await call.answer()
+
+
 @router.message(F.text == "⏯ تشغيل / إيقاف")
 async def toggle(message: Message):
     current = await db.is_enabled(message.from_user.id)

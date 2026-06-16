@@ -78,6 +78,7 @@ def _fs_read_business(owner_id):
         "greeting_text": d.get("greeting_text") or "",
         "greeting_hours": d.get("greeting_hours") or 12,
         "greeting_activated_at": d.get("greeting_activated_at") or 0,
+        "calc_enabled": bool(d.get("calc_enabled")),
     }
 
 
@@ -186,7 +187,7 @@ async def get_reply_context(conn_id):
         if owner_id:
             _cache_set(_owner_cache, conn_id, (owner_id, _now()))
     if not owner_id:
-        return None, False, [], False, _greeting_of({})
+        return None, False, [], False, _greeting_of({}), False
 
     dcached = _data_cache.get(owner_id)
     if dcached and _now() - dcached[1] < CACHE_TTL:
@@ -195,7 +196,7 @@ async def get_reply_context(conn_id):
         data = await asyncio.to_thread(_fs_read_business, owner_id)
         _cache_set(_data_cache, owner_id, (data, _now()))
 
-    return owner_id, data["is_enabled"], data["rules"], _sub_active(data), _greeting_of(data)
+    return owner_id, data["is_enabled"], data["rules"], _sub_active(data), _greeting_of(data), data["calc_enabled"]
 
 
 async def save_connection(owner_id, conn_id, enabled):
@@ -294,6 +295,56 @@ async def get_last_seen(owner_id, cust):
 
 async def set_last_seen(owner_id, cust, ts):
     await asyncio.to_thread(_fs_set_last_seen, owner_id, cust, ts)
+
+
+def _fs_toggle_calc(owner_id):
+    ref = _db.collection("businesses").document(str(owner_id))
+    doc = ref.get(timeout=FS_TIMEOUT)
+    d = doc.to_dict() if doc.exists else {}
+    new = not bool(d.get("calc_enabled"))
+    ref.set({"calc_enabled": new}, merge=True, timeout=FS_TIMEOUT)
+    return new
+
+
+def _fs_get_calc_history(owner_id, cust):
+    doc = _db.collection("calc_history").document(f"{owner_id}_{cust}").get(timeout=FS_TIMEOUT)
+    return doc.to_dict().get("ops", []) if doc.exists else []
+
+
+def _fs_add_calc_history(owner_id, cust, op):
+    ref = _db.collection("calc_history").document(f"{owner_id}_{cust}")
+    doc = ref.get(timeout=FS_TIMEOUT)
+    ops = doc.to_dict().get("ops", []) if doc.exists else []
+    ops.insert(0, op)
+    ops = ops[:3]
+    ref.set({"ops": ops}, timeout=FS_TIMEOUT)
+
+
+def _fs_clear_calc_history(owner_id, cust):
+    _db.collection("calc_history").document(f"{owner_id}_{cust}").set({"ops": []}, timeout=FS_TIMEOUT)
+
+
+async def toggle_calc(owner_id):
+    new = await asyncio.to_thread(_fs_toggle_calc, owner_id)
+    _invalidate(owner_id)
+    return new
+
+
+async def get_calc_enabled(owner_id):
+    data = await asyncio.to_thread(_fs_read_business, owner_id)
+    return data["calc_enabled"]
+
+
+async def get_calc_history(owner_id, cust):
+    return await asyncio.to_thread(_fs_get_calc_history, owner_id, cust)
+
+
+async def add_calc_history(owner_id, cust, op):
+    await asyncio.to_thread(_fs_add_calc_history, owner_id, cust, op)
+
+
+async def clear_calc_history(owner_id, cust):
+    await asyncio.to_thread(_fs_clear_calc_history, owner_id, cust)
 
 
 async def ping():

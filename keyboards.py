@@ -17,7 +17,7 @@ def main_menu() -> ReplyKeyboardMarkup:
     return ReplyKeyboardMarkup(
         keyboard=[
             [KeyboardButton(text="➕ إضافة رد"), KeyboardButton(text="👋 الترحيب")],
-            [KeyboardButton(text="📋 قائمة الردود")],
+            [KeyboardButton(text="📋 قائمة الردود"), KeyboardButton(text="🧮 الحاسبة")],
             [KeyboardButton(text="⏯ تشغيل / إيقاف"), KeyboardButton(text="💳 اشتراكي")],
         ],
         resize_keyboard=True,
@@ -104,4 +104,11 @@ def greeting_menu_kb(enabled) -> InlineKeyboardMarkup:
             [InlineKeyboardButton(text="⏱ عدد الساعات", callback_data="gr:hours")],
             [InlineKeyboardButton(text=toggle, callback_data="gr:toggle")],
         ]
+    )
+
+
+def calc_menu_kb(enabled) -> InlineKeyboardMarkup:
+    toggle = "⏸ إيقاف الحاسبة" if enabled else "▶️ تفعيل الحاسبة"
+    return InlineKeyboardMarkup(
+        inline_keyboard=[[InlineKeyboardButton(text=toggle, callback_data="calc:toggle")]]
     )
