@@ -118,3 +118,9 @@ def calc_history_kb() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[[InlineKeyboardButton(text="🗑 مسح سجلي", callback_data="calc:clear")]]
     )
+
+
+def calc_again_kb() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[[InlineKeyboardButton(text="🔄 احسب مرة ثانية", callback_data="calc:again")]]
+    )

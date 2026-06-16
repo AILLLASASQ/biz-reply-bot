@@ -18,11 +18,20 @@ _MAX_POINTS = 42
 
 
 def parse_number(s):
-    s = (s or "").translate(_ARABIC)
-    s = s.replace(",", "").replace(" ", "").strip()
-    if s.isdigit():
-        return int(s)
-    return None
+    s = (s or "").translate(_ARABIC).strip().lower()
+    s = s.replace(",", "").replace(" ", "")
+    mult = 1
+    if s.endswith("k"):
+        mult, s = 1000, s[:-1]
+    elif s.endswith("m"):
+        mult, s = 1_000_000, s[:-1]
+    try:
+        val = float(s) * mult
+    except ValueError:
+        return None
+    if val < 0:
+        return None
+    return int(val)
 
 
 def points_for(value):
@@ -40,6 +49,33 @@ def compute(you, opp):
     return yp, op, win, loss
 
 
+def _tier_info(value):
+    lower = 0
+    for i, (upper, pts) in enumerate(_TABLE):
+        if value <= upper:
+            next_pts = _TABLE[i + 1][1] if i + 1 < len(_TABLE) else _MAX_POINTS
+            return lower, upper, pts, next_pts
+        lower = upper + 1
+    return 2000001, None, _MAX_POINTS, None
+
+
+def progress_bar(value, segments=10):
+    lower, upper, pts, next_pts = _tier_info(value)
+    if upper is None:
+        return "🔝 أنت في أعلى شريحة (42 نقطة)."
+    span = upper - lower
+    frac = (value - lower) / span if span > 0 else 1.0
+    frac = max(0.0, min(1.0, frac))
+    filled = round(frac * segments)
+    bar = "▓" * filled + "░" * (segments - filled)
+    remaining = upper + 1 - value
+    return (
+        f"📊 تقدّمك للشريحة التالية ({next_pts} نقطة):\n"
+        f"{bar} {int(frac * 100)}%\n"
+        f"متبقّي {remaining:,} شعبية"
+    )
+
+
 def format_result(you, opp):
     yp, op, win, loss = compute(you, opp)
     return (
@@ -48,6 +84,7 @@ def format_result(you, opp):
         f"🔴 الخصم: {opp:,} ⟵ ({op} نقطة)\n\n"
         f"✅ فوزك يعطيك: +{win} نقطة\n"
         f"❌ خسارتك تخصم: −{loss} نقطة\n\n"
+        f"{progress_bar(you)}\n\n"
         "اكتب «حاسبة» لحساب آخر، أو «سجلي» لعملياتك."
     )
 

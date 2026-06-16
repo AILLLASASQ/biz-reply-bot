@@ -32,6 +32,7 @@ async def _save_and_reply_calc(message, bot, conn_id, owner_id, customer_id, you
         chat_id=message.chat.id,
         text=calc.format_result(you, opp),
         business_connection_id=conn_id,
+        reply_markup=kb.calc_again_kb(),
     )
     await db.add_calc_history(
         owner_id,
@@ -159,6 +160,24 @@ async def on_message(message: Message, bot: Bot):
                 reply_markup=kb.reply_inline_kb(rule.get("id"), rule.get("buttons")),
             )
             break
+
+
+@router.callback_query(F.data == "calc:again")
+async def on_calc_again(call: CallbackQuery, bot: Bot):
+    try:
+        await call.answer()
+    except Exception:
+        pass
+    conn_id = getattr(call.message, "business_connection_id", None)
+    if not conn_id:
+        return
+    key = (conn_id, str(call.from_user.id))
+    _calc_state[key] = {"step": "you"}
+    await bot.send_message(
+        chat_id=call.message.chat.id,
+        text="🧮 أرسل شعبيتك (أو «إلغاء»):",
+        business_connection_id=conn_id,
+    )
 
 
 @router.callback_query(F.data == "calc:clear")
