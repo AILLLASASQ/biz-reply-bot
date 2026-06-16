@@ -13,8 +13,9 @@ _TABLE = [
     (500000, 32),
     (900000, 36),
     (2000000, 40),
+    (8000000, 42),
 ]
-_MAX_POINTS = 42
+_MAX_POINTS = 44
 
 
 def parse_number(s):
@@ -56,13 +57,13 @@ def _tier_info(value):
             next_pts = _TABLE[i + 1][1] if i + 1 < len(_TABLE) else _MAX_POINTS
             return lower, upper, pts, next_pts
         lower = upper + 1
-    return 2000001, None, _MAX_POINTS, None
+    return _TABLE[-1][0] + 1, None, _MAX_POINTS, None
 
 
 def progress_bar(value, segments=10):
     lower, upper, pts, next_pts = _tier_info(value)
     if upper is None:
-        return "🔝 أنت في أعلى شريحة (42 نقطة)."
+        return f"🔝 أنت في أعلى شريحة ({_MAX_POINTS} نقطة)."
     span = upper - lower
     frac = (value - lower) / span if span > 0 else 1.0
     frac = max(0.0, min(1.0, frac))
