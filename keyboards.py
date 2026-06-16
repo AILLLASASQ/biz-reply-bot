@@ -112,3 +112,9 @@ def calc_menu_kb(enabled) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[[InlineKeyboardButton(text=toggle, callback_data="calc:toggle")]]
     )
+
+
+def calc_history_kb() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[[InlineKeyboardButton(text="🗑 مسح سجلي", callback_data="calc:clear")]]
+    )

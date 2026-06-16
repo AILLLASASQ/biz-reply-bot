@@ -117,6 +117,7 @@ async def on_message(message: Message, bot: Bot):
                 chat_id=message.chat.id,
                 text=calc.format_history(ops),
                 business_connection_id=conn_id,
+                reply_markup=kb.calc_history_kb() if ops else None,
             )
             return
         if text == "حاسبة" or text.startswith("حاسبة "):
@@ -158,6 +159,26 @@ async def on_message(message: Message, bot: Bot):
                 reply_markup=kb.reply_inline_kb(rule.get("id"), rule.get("buttons")),
             )
             break
+
+
+@router.callback_query(F.data == "calc:clear")
+async def on_calc_clear(call: CallbackQuery, bot: Bot):
+    try:
+        await call.answer("تم المسح")
+    except Exception:
+        pass
+    conn_id = getattr(call.message, "business_connection_id", None)
+    if not conn_id:
+        return
+    owner_id, enabled, rules, sub_active, _, _ = await db.get_reply_context(conn_id)
+    if not owner_id:
+        return
+    await db.clear_calc_history(owner_id, str(call.from_user.id))
+    await bot.send_message(
+        chat_id=call.message.chat.id,
+        text="🗑 تم مسح سجلك.",
+        business_connection_id=conn_id,
+    )
 
 
 @router.callback_query(F.data.startswith("b:"))
