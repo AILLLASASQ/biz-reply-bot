@@ -58,6 +58,7 @@ def _greeting_of(data):
         "text": data.get("greeting_text", ""),
         "hours": data.get("greeting_hours", 12),
         "activated_at": data.get("greeting_activated_at", 0),
+        "buttons": data.get("greeting_buttons", []),
     }
 
 
@@ -79,6 +80,7 @@ def _fs_read_business(owner_id):
         "greeting_hours": d.get("greeting_hours") or 12,
         "greeting_activated_at": d.get("greeting_activated_at") or 0,
         "calc_enabled": bool(d.get("calc_enabled")),
+        "greeting_buttons": d.get("greeting_buttons", []),
     }
 
 
@@ -280,6 +282,11 @@ async def set_greeting_text(owner_id, text):
 
 async def set_greeting_hours(owner_id, hours):
     await asyncio.to_thread(_fs_set_greeting_field, owner_id, "greeting_hours", hours)
+    _invalidate(owner_id)
+
+
+async def set_greeting_buttons(owner_id, buttons):
+    await asyncio.to_thread(_fs_set_greeting_field, owner_id, "greeting_buttons", buttons)
     _invalidate(owner_id)
 
 

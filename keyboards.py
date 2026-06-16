@@ -102,6 +102,7 @@ def greeting_menu_kb(enabled) -> InlineKeyboardMarkup:
         inline_keyboard=[
             [InlineKeyboardButton(text="✏️ نص الترحيب", callback_data="gr:text")],
             [InlineKeyboardButton(text="⏱ عدد الساعات", callback_data="gr:hours")],
+            [InlineKeyboardButton(text="🔘 أزرار الترحيب", callback_data="gr:buttons")],
             [InlineKeyboardButton(text=toggle, callback_data="gr:toggle")],
         ]
     )
@@ -136,3 +137,16 @@ def calc_intro_kb() -> InlineKeyboardMarkup:
             [InlineKeyboardButton(text="📖 الجدول", callback_data="calc:table")],
         ]
     )
+
+
+def greeting_buttons_kb(buttons):
+    if not buttons:
+        return None
+    btns = []
+    for i, b in enumerate(buttons):
+        if b.get("url"):
+            btns.append(InlineKeyboardButton(text=_trunc(b["text"]), url=b["url"]))
+        else:
+            btns.append(InlineKeyboardButton(text=_trunc(b["text"]), callback_data=f"gb:{i}"))
+    rows = [btns[i : i + 2] for i in range(0, len(btns), 2)]
+    return InlineKeyboardMarkup(inline_keyboard=rows)

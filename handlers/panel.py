@@ -155,6 +155,11 @@ async def add_reply(message: Message, state: FSMContext):
 async def _finalize_buttons(message: Message, state: FSMContext):
     data = await state.get_data()
     btns = data.get("btns", [])
+    if data.get("btn_mode") == "greeting":
+        await db.set_greeting_buttons(message.from_user.id, btns)
+        await state.clear()
+        await message.answer(f"✅ تم حفظ أزرار الترحيب ({len(btns)}).", reply_markup=kb.main_menu())
+        return
     if data.get("btn_mode") == "edit":
         await db.update_rule_field(message.from_user.id, data["edit_id"], "buttons", btns)
         msg = "✅ تم تحديث أزرار الرد."
@@ -296,7 +301,8 @@ async def edit_field_value(message: Message, state: FSMContext):
 def _greeting_status(g):
     state = "مفعّل ✅" if g["enabled"] else "موقوف ⏸"
     txt = g["text"] or "— (لم يُحدّد بعد)"
-    return f"حالة الترحيب: {state}\nيرحّب من جديد لو الزبون ساكت أكثر من {g['hours']} ساعة.\n\nالنص:\n{txt}"
+    nb = len(g.get("buttons") or [])
+    return f"حالة الترحيب: {state}\nالأزرار: {nb}\nيرحّب من جديد لو الزبون ساكت أكثر من {g['hours']} ساعة.\n\nالنص:\n{txt}"
 
 
 @router.message(F.text == "👋 الترحيب")
@@ -343,6 +349,17 @@ async def greeting_hours_set(message: Message, state: FSMContext):
     await db.set_greeting_hours(message.from_user.id, hours)
     await state.clear()
     await message.answer(f"✅ ضُبطت الفجوة على {hours} ساعة.", reply_markup=kb.main_menu())
+
+
+@router.callback_query(F.data == "gr:buttons")
+async def greeting_buttons_start(call: CallbackQuery, state: FSMContext):
+    await state.update_data(btns=[], btn_mode="greeting")
+    await state.set_state(Buttons.label)
+    await call.message.answer(
+        "أرسل <b>اسم الزر</b> الأول لأزرار الترحيب، أو «تخطي» للحفظ بدون أزرار.\n"
+        "القيمة لكل زر: نص، أو رابط (http)، أو <code>/calc</code> ثم الشرح (للحاسبة)."
+    )
+    await call.answer()
 
 
 @router.callback_query(F.data == "gr:toggle")

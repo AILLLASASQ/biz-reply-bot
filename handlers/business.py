@@ -125,6 +125,16 @@ async def on_message(message: Message, bot: Bot):
             await _start_calc(message, bot, conn_id, owner_id, customer_id, text, key)
             return
 
+    if text == "القائمة":
+        gb = greeting.get("buttons") or []
+        await bot.send_message(
+            chat_id=message.chat.id,
+            text=greeting["text"] or "👋 اختر ما يهمك:",
+            business_connection_id=conn_id,
+            reply_markup=kb.greeting_buttons_kb(gb),
+        )
+        return
+
     if greeting["enabled"] and greeting["text"]:
         cust = str(message.from_user.id)
         last = await db.get_last_seen(owner_id, cust)
@@ -141,6 +151,7 @@ async def on_message(message: Message, bot: Bot):
                 chat_id=message.chat.id,
                 text=greeting["text"],
                 business_connection_id=conn_id,
+                reply_markup=kb.greeting_buttons_kb(greeting.get("buttons")),
             )
 
     low = text.lower()
@@ -233,6 +244,48 @@ async def on_calc_clear(call: CallbackQuery, bot: Bot):
     await bot.send_message(
         chat_id=call.message.chat.id,
         text="🗑 تم مسح سجلك.",
+        business_connection_id=conn_id,
+    )
+
+
+@router.callback_query(F.data.startswith("gb:"))
+async def on_greeting_button(call: CallbackQuery, bot: Bot):
+    try:
+        await call.answer()
+    except Exception:
+        pass
+    conn_id = getattr(call.message, "business_connection_id", None)
+    if not conn_id:
+        return
+    owner_id, enabled, rules, sub_active, greeting, calc_enabled = await db.get_reply_context(conn_id)
+    if not owner_id:
+        return
+    try:
+        idx = int(call.data.split(":")[1])
+    except (ValueError, IndexError):
+        return
+    btns = greeting.get("buttons") or []
+    if idx < 0 or idx >= len(btns):
+        return
+    b = btns[idx]
+    if b.get("calc"):
+        if not calc_enabled:
+            await bot.send_message(
+                chat_id=call.message.chat.id,
+                text="🧮 الحاسبة موقوفة حالياً.",
+                business_connection_id=conn_id,
+            )
+            return
+        await bot.send_message(
+            chat_id=call.message.chat.id,
+            text=b.get("reply") or "🧮 حاسبة المعركة الفردية",
+            business_connection_id=conn_id,
+            reply_markup=kb.calc_intro_kb(),
+        )
+        return
+    await bot.send_message(
+        chat_id=call.message.chat.id,
+        text=b.get("reply", ""),
         business_connection_id=conn_id,
     )
 
