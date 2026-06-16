@@ -63,7 +63,7 @@ def _tier_info(value):
 def progress_bar(value, segments=10):
     lower, upper, pts, next_pts = _tier_info(value)
     if upper is None:
-        return f"🔝 أنت في أعلى شريحة ({_MAX_POINTS} نقطة)."
+        return f"🔝 أنت في أعلى نقاط ({_MAX_POINTS} نقطة)."
     span = upper - lower
     frac = (value - lower) / span if span > 0 else 1.0
     frac = max(0.0, min(1.0, frac))
@@ -71,7 +71,7 @@ def progress_bar(value, segments=10):
     bar = "▓" * filled + "░" * (segments - filled)
     remaining = upper + 1 - value
     return (
-        f"📊 تقدّمك للشريحة التالية ({next_pts} نقطة):\n"
+        f"📊 تقدّمك ل النقاط التالية ({next_pts} نقطة):\n"
         f"{bar} {int(frac * 100)}%\n"
         f"متبقّي {remaining:,} شعبية"
     )
@@ -83,16 +83,16 @@ def format_result(you, opp):
         "🧮 حاسبة الشعبية (الفردية)\n\n"
         f"🟢 شعبيتك: {you:,} ⟵ ({yp} نقطة)\n"
         f"🔴 الخصم: {opp:,} ⟵ ({op} نقطة)\n\n"
-        f"✅ فوزك يعطيك: +{win} نقطة\n"
-        f"❌ خسارتك تخصم: −{loss} نقطة\n\n"
+        f"✅ فوزك : +{win} نقطة\n"
+        f"❌ خسارتك : −{loss} نقطة\n\n"
         f"{progress_bar(you)}\n\n"
-        "اكتب «حاسبة» لحساب آخر، أو «سجلي» لعملياتك."
+        "اكتب «حاسبة» لبدء من جديد أو «سجلي» لعملياتك."
     )
 
 
 def format_history(ops):
     if not ops:
-        return "📋 ما عندك عمليات بعد. اكتب «حاسبة» لتبدأ."
+        return "📋 ما عندك عمليات بعد اكتب «حاسبة» لتبدأ."
     lines = ["📋 آخر عملياتك:\n"]
     for i, o in enumerate(ops, 1):
         lines.append(

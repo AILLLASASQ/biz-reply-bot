@@ -198,7 +198,7 @@ async def btn_value(message: Message, state: FSMContext):
     await state.set_state(Buttons.label)
     await message.answer(
         f"✅ أُضيف الزر «{label}».\n"
-        "أرسل اسم الزر التالي، أو «تخطي» للحفظ."
+        "أرسل اسم الزر التالي، أو اكتب «تخطي» للحفظ."
     )
 
 
