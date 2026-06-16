@@ -180,7 +180,9 @@ async def btn_label(message: Message, state: FSMContext):
     await state.update_data(pending_label=label)
     await state.set_state(Buttons.value)
     await message.answer(
-        "أرسل <b>رد هذا الزر</b> — نص طويل/مرتب بالأسطر، أو رابط (يبدأ بـ http)."
+        "أرسل <b>رد هذا الزر</b>:\n"
+        "• نص طويل/مرتب، أو رابط (يبدأ بـ http)\n"
+        "• أو <code>/calc</code> ثم شرحك ← زر يفتح الحاسبة"
     )
 
 
@@ -190,7 +192,10 @@ async def btn_value(message: Message, state: FSMContext):
     data = await state.get_data()
     label = data.get("pending_label", "زر")
     btns = data.get("btns", [])
-    if val.startswith("http://") or val.startswith("https://"):
+    if val.startswith("/calc"):
+        explanation = val[5:].strip() or "🧮 حاسبة المعركة الفردية"
+        btns.append({"text": label, "calc": True, "reply": explanation})
+    elif val.startswith("http://") or val.startswith("https://"):
         btns.append({"text": label, "url": val})
     else:
         btns.append({"text": label, "reply": val})

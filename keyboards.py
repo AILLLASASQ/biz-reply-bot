@@ -124,3 +124,15 @@ def calc_again_kb() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[[InlineKeyboardButton(text="🔄 احسب مرة ثانية", callback_data="calc:again")]]
     )
+
+
+def calc_intro_kb() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(text="🧮 ابدأ الحساب", callback_data="calc:start"),
+                InlineKeyboardButton(text="📋 سجلي", callback_data="calc:history"),
+            ],
+            [InlineKeyboardButton(text="📖 الجدول", callback_data="calc:table")],
+        ]
+    )

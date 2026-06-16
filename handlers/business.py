@@ -162,8 +162,8 @@ async def on_message(message: Message, bot: Bot):
             break
 
 
-@router.callback_query(F.data == "calc:again")
-async def on_calc_again(call: CallbackQuery, bot: Bot):
+@router.callback_query(F.data.in_({"calc:again", "calc:start"}))
+async def on_calc_start(call: CallbackQuery, bot: Bot):
     try:
         await call.answer()
     except Exception:
@@ -176,6 +176,43 @@ async def on_calc_again(call: CallbackQuery, bot: Bot):
     await bot.send_message(
         chat_id=call.message.chat.id,
         text="🧮 أرسل شعبيتك (أو «إلغاء»):",
+        business_connection_id=conn_id,
+    )
+
+
+@router.callback_query(F.data == "calc:history")
+async def on_calc_history(call: CallbackQuery, bot: Bot):
+    try:
+        await call.answer()
+    except Exception:
+        pass
+    conn_id = getattr(call.message, "business_connection_id", None)
+    if not conn_id:
+        return
+    owner_id, enabled, rules, sub_active, _, _ = await db.get_reply_context(conn_id)
+    if not owner_id:
+        return
+    ops = await db.get_calc_history(owner_id, str(call.from_user.id))
+    await bot.send_message(
+        chat_id=call.message.chat.id,
+        text=calc.format_history(ops),
+        business_connection_id=conn_id,
+        reply_markup=kb.calc_history_kb() if ops else None,
+    )
+
+
+@router.callback_query(F.data == "calc:table")
+async def on_calc_table(call: CallbackQuery, bot: Bot):
+    try:
+        await call.answer()
+    except Exception:
+        pass
+    conn_id = getattr(call.message, "business_connection_id", None)
+    if not conn_id:
+        return
+    await bot.send_message(
+        chat_id=call.message.chat.id,
+        text=calc.format_table(),
         business_connection_id=conn_id,
     )
 
@@ -220,7 +257,7 @@ async def on_button(call: CallbackQuery, bot: Bot):
     if not conn_id:
         return
 
-    owner_id, enabled, rules, sub_active, _, _ = await db.get_reply_context(conn_id)
+    owner_id, enabled, rules, sub_active, _, calc_enabled = await db.get_reply_context(conn_id)
     if not owner_id or not sub_active:
         return
 
@@ -231,8 +268,25 @@ async def on_button(call: CallbackQuery, bot: Bot):
     if idx < 0 or idx >= len(buttons):
         return
 
+    btn = buttons[idx]
+    if btn.get("calc"):
+        if not calc_enabled:
+            await bot.send_message(
+                chat_id=call.message.chat.id,
+                text="🧮 الحاسبة موقوفة حالياً.",
+                business_connection_id=conn_id,
+            )
+            return
+        await bot.send_message(
+            chat_id=call.message.chat.id,
+            text=btn.get("reply") or "🧮 حاسبة المعركة الفردية",
+            business_connection_id=conn_id,
+            reply_markup=kb.calc_intro_kb(),
+        )
+        return
+
     await bot.send_message(
         chat_id=call.message.chat.id,
-        text=buttons[idx]["reply"],
+        text=btn.get("reply", ""),
         business_connection_id=conn_id,
     )

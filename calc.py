@@ -100,3 +100,15 @@ def format_history(ops):
             f"← فوز +{o['win']} / خسارة −{o['loss']}"
         )
     return "\n".join(lines)
+
+
+def format_table():
+    lines = ["📊 جدول نقاط المعركة الفردية:\n"]
+    lower = 0
+    for upper, pts in _TABLE:
+        lines.append(f"{lower:,} – {upper:,} = {pts} نقطة")
+        lower = upper + 1
+    lines.append(f"{lower:,} – ∞ = {_MAX_POINTS} نقطة")
+    lines.append("\nفوز: نقاطك + نصف نقاط الخصم")
+    lines.append("خسارة: نصف نقاطك فقط")
+    return "\n".join(lines)
