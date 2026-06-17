@@ -81,6 +81,8 @@ def _fs_read_business(owner_id):
         "greeting_activated_at": d.get("greeting_activated_at") or 0,
         "calc_enabled": bool(d.get("calc_enabled")),
         "greeting_buttons": d.get("greeting_buttons", []),
+        "sections": d.get("sections", []),
+        "main_section": d.get("main_section"),
     }
 
 
@@ -352,6 +354,79 @@ async def add_calc_history(owner_id, cust, op):
 
 async def clear_calc_history(owner_id, cust):
     await asyncio.to_thread(_fs_clear_calc_history, owner_id, cust)
+
+
+def _fs_set_sections(owner_id, sections, main="__keep__"):
+    upd = {"sections": sections}
+    if main != "__keep__":
+        upd["main_section"] = main
+    _db.collection("businesses").document(str(owner_id)).set(upd, merge=True, timeout=FS_TIMEOUT)
+
+
+def _fs_add_section(owner_id, name):
+    data = _fs_read_business(owner_id)
+    sections = data["sections"]
+    sid = uuid.uuid4().hex[:6]
+    sections.append({"id": sid, "name": name, "buttons": []})
+    main = data["main_section"] or sid
+    _fs_set_sections(owner_id, sections, main)
+    return sid
+
+
+def _fs_delete_section(owner_id, section_id):
+    data = _fs_read_business(owner_id)
+    sections = [x for x in data["sections"] if x.get("id") != section_id]
+    main = data["main_section"]
+    if main == section_id:
+        main = sections[0]["id"] if sections else None
+    _fs_set_sections(owner_id, sections, main)
+
+
+def _fs_add_section_button(owner_id, section_id, button):
+    data = _fs_read_business(owner_id)
+    sections = data["sections"]
+    for x in sections:
+        if x.get("id") == section_id:
+            x.setdefault("buttons", []).append(button)
+            break
+    _fs_set_sections(owner_id, sections)
+
+
+def _fs_set_main_section(owner_id, section_id):
+    _db.collection("businesses").document(str(owner_id)).set(
+        {"main_section": section_id}, merge=True, timeout=FS_TIMEOUT
+    )
+
+
+async def get_sections(owner_id):
+    data = await asyncio.to_thread(_fs_read_business, owner_id)
+    return data["sections"]
+
+
+async def get_main_section_id(owner_id):
+    data = await asyncio.to_thread(_fs_read_business, owner_id)
+    return data["main_section"]
+
+
+async def add_section(owner_id, name):
+    sid = await asyncio.to_thread(_fs_add_section, owner_id, name)
+    _invalidate(owner_id)
+    return sid
+
+
+async def delete_section(owner_id, section_id):
+    await asyncio.to_thread(_fs_delete_section, owner_id, section_id)
+    _invalidate(owner_id)
+
+
+async def add_section_button(owner_id, section_id, button):
+    await asyncio.to_thread(_fs_add_section_button, owner_id, section_id, button)
+    _invalidate(owner_id)
+
+
+async def set_main_section(owner_id, section_id):
+    await asyncio.to_thread(_fs_set_main_section, owner_id, section_id)
+    _invalidate(owner_id)
 
 
 async def ping():

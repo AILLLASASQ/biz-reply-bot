@@ -8,7 +8,7 @@ from aiogram.types import Message, CallbackQuery
 import config
 import database as db
 import keyboards as kb
-from states import AddRule, EditField, Greeting, Buttons
+from states import AddRule, EditField, Greeting, Buttons, Section
 
 router = Router()
 
@@ -390,6 +390,157 @@ async def calc_toggle(call: CallbackQuery):
     enabled = await db.toggle_calc(call.from_user.id)
     await call.message.edit_text("▶️ تم تفعيل الحاسبة." if enabled else "⏸ تم إيقاف الحاسبة.")
     await call.answer()
+
+
+# ===== الأقسام (قوائم متداخلة) =====
+def _section_view(section):
+    lines = [f"🗂 القسم: <b>{section['name']}</b>\n"]
+    btns = section.get("buttons", [])
+    if not btns:
+        lines.append("(لا أزرار بعد)")
+    else:
+        for b in btns:
+            if b.get("kind") == "section":
+                lines.append(f"• {b['text']} ← يفتح قسماً")
+            elif b.get("url"):
+                lines.append(f"• {b['text']} ← رابط")
+            elif b.get("calc"):
+                lines.append(f"• {b['text']} ← حاسبة")
+            else:
+                lines.append(f"• {b['text']} ← نص")
+    return "\n".join(lines)
+
+
+async def _send_section(target, owner_id, sid):
+    sections = await db.get_sections(owner_id)
+    main_id = await db.get_main_section_id(owner_id)
+    section = next((x for x in sections if x.get("id") == sid), None)
+    if not section:
+        await target.answer("القسم غير موجود.")
+        return
+    await target.answer(_section_view(section), reply_markup=kb.sx_section_kb(section, main_id))
+
+
+@router.message(F.text == "🗂 الأقسام")
+async def sections_menu(message: Message):
+    sections = await db.get_sections(message.from_user.id)
+    main_id = await db.get_main_section_id(message.from_user.id)
+    txt = "🗂 الأقسام:\nأنشئ أقساماً، وكل قسم فيه أزرار تفتح أقساماً أخرى أو محتوى."
+    if not sections:
+        txt = "🗂 لا توجد أقسام بعد. أنشئ أول قسم 👇"
+    await message.answer(txt, reply_markup=kb.sx_list_kb(sections, main_id))
+
+
+@router.callback_query(F.data == "sx:list")
+async def sx_list(call: CallbackQuery):
+    sections = await db.get_sections(call.from_user.id)
+    main_id = await db.get_main_section_id(call.from_user.id)
+    await call.message.answer("🗂 الأقسام:", reply_markup=kb.sx_list_kb(sections, main_id))
+    await call.answer()
+
+
+@router.callback_query(F.data == "sx:new")
+async def sx_new(call: CallbackQuery, state: FSMContext):
+    await state.set_state(Section.name)
+    await call.message.answer("أرسل اسم القسم الجديد (مثل: الشدات):")
+    await call.answer()
+
+
+@router.message(Section.name)
+async def sx_create(message: Message, state: FSMContext):
+    sid = await db.add_section(message.from_user.id, (message.text or "").strip())
+    await state.clear()
+    await message.answer("✅ تم إنشاء القسم.")
+    await _send_section(message, message.from_user.id, sid)
+
+
+@router.callback_query(F.data.startswith("sx:open:"))
+async def sx_open(call: CallbackQuery):
+    sid = call.data.split(":", 2)[2]
+    await _send_section(call.message, call.from_user.id, sid)
+    await call.answer()
+
+
+@router.callback_query(F.data.startswith("sx:main:"))
+async def sx_main(call: CallbackQuery):
+    sid = call.data.split(":", 2)[2]
+    await db.set_main_section(call.from_user.id, sid)
+    await call.answer("صار القسم الرئيسي ⭐")
+    await _send_section(call.message, call.from_user.id, sid)
+
+
+@router.callback_query(F.data.startswith("sx:del:"))
+async def sx_del(call: CallbackQuery):
+    sid = call.data.split(":", 2)[2]
+    await db.delete_section(call.from_user.id, sid)
+    await call.message.edit_text("🗑 تم حذف القسم.")
+    await call.answer()
+
+
+@router.callback_query(F.data.startswith("sx:addsec:"))
+async def sx_addsec(call: CallbackQuery, state: FSMContext):
+    sid = call.data.split(":", 2)[2]
+    await state.set_state(Section.btn_label)
+    await state.update_data(sec_id=sid, btn_kind="section")
+    await call.message.answer("أرسل اسم الزر الذي يفتح قسماً:")
+    await call.answer()
+
+
+@router.callback_query(F.data.startswith("sx:addcon:"))
+async def sx_addcon(call: CallbackQuery, state: FSMContext):
+    sid = call.data.split(":", 2)[2]
+    await state.set_state(Section.btn_label)
+    await state.update_data(sec_id=sid, btn_kind="content")
+    await call.message.answer("أرسل اسم زر المحتوى:")
+    await call.answer()
+
+
+@router.message(Section.btn_label)
+async def sx_btn_label(message: Message, state: FSMContext):
+    await state.update_data(pending_label=(message.text or "").strip())
+    data = await state.get_data()
+    if data.get("btn_kind") == "content":
+        await state.set_state(Section.btn_value)
+        await message.answer(
+            "أرسل محتوى الزر:\n"
+            "• نص، أو رابط (http)، أو <code>/calc</code> ثم الشرح (للحاسبة)."
+        )
+    else:
+        await state.set_state(None)
+        sections = await db.get_sections(message.from_user.id)
+        await message.answer(
+            "اختر القسم الذي يفتحه هذا الزر:",
+            reply_markup=kb.sx_pick_target_kb(sections, data["sec_id"]),
+        )
+
+
+@router.message(Section.btn_value)
+async def sx_btn_value(message: Message, state: FSMContext):
+    val = (message.text or "").strip()
+    data = await state.get_data()
+    sid = data["sec_id"]
+    label = data.get("pending_label", "زر")
+    if val.startswith("/calc"):
+        btn = {"text": label, "kind": "content", "calc": True, "reply": val[5:].strip() or "🧮 حاسبة المعركة الفردية"}
+    elif val.startswith("http://") or val.startswith("https://"):
+        btn = {"text": label, "kind": "content", "url": val}
+    else:
+        btn = {"text": label, "kind": "content", "reply": val}
+    await db.add_section_button(message.from_user.id, sid, btn)
+    await state.clear()
+    await message.answer("✅ أُضيف الزر.")
+    await _send_section(message, message.from_user.id, sid)
+
+
+@router.callback_query(F.data.startswith("sx:pick:"))
+async def sx_pick(call: CallbackQuery, state: FSMContext):
+    _, _, sid, target = call.data.split(":", 3)
+    data = await state.get_data()
+    label = data.get("pending_label", "قسم")
+    await db.add_section_button(call.from_user.id, sid, {"text": label, "kind": "section", "target": target})
+    await state.clear()
+    await call.answer("✅ أُضيف الزر")
+    await _send_section(call.message, call.from_user.id, sid)
 
 
 @router.message(F.text == "⏯ تشغيل / إيقاف")

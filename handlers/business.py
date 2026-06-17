@@ -125,6 +125,20 @@ async def on_message(message: Message, bot: Bot):
             await _start_calc(message, bot, conn_id, owner_id, customer_id, text, key)
             return
 
+    if text == "الأقسام":
+        main_id = await db.get_main_section_id(owner_id)
+        if main_id:
+            sections = await db.get_sections(owner_id)
+            section = next((x for x in sections if x.get("id") == main_id), None)
+            if section:
+                await bot.send_message(
+                    chat_id=message.chat.id,
+                    text=section["name"],
+                    business_connection_id=conn_id,
+                    reply_markup=kb.section_render_kb(section, main_id),
+                )
+                return
+
     if text == "القائمة":
         gb = greeting.get("buttons") or []
         await bot.send_message(
@@ -268,6 +282,82 @@ async def on_greeting_button(call: CallbackQuery, bot: Bot):
     if idx < 0 or idx >= len(btns):
         return
     b = btns[idx]
+    if b.get("calc"):
+        if not calc_enabled:
+            await bot.send_message(
+                chat_id=call.message.chat.id,
+                text="🧮 الحاسبة موقوفة حالياً.",
+                business_connection_id=conn_id,
+            )
+            return
+        await bot.send_message(
+            chat_id=call.message.chat.id,
+            text=b.get("reply") or "🧮 حاسبة المعركة الفردية",
+            business_connection_id=conn_id,
+            reply_markup=kb.calc_intro_kb(),
+        )
+        return
+    await bot.send_message(
+        chat_id=call.message.chat.id,
+        text=b.get("reply", ""),
+        business_connection_id=conn_id,
+    )
+
+
+@router.callback_query(F.data.startswith("sec:"))
+async def on_section_nav(call: CallbackQuery, bot: Bot):
+    try:
+        await call.answer()
+    except Exception:
+        pass
+    conn_id = getattr(call.message, "business_connection_id", None)
+    if not conn_id:
+        return
+    owner_id, enabled, rules, sub_active, greeting, calc_enabled = await db.get_reply_context(conn_id)
+    if not owner_id:
+        return
+    sid = call.data.split(":", 1)[1]
+    sections = await db.get_sections(owner_id)
+    section = next((x for x in sections if x.get("id") == sid), None)
+    if not section:
+        return
+    main_id = await db.get_main_section_id(owner_id)
+    await bot.send_message(
+        chat_id=call.message.chat.id,
+        text=section["name"],
+        business_connection_id=conn_id,
+        reply_markup=kb.section_render_kb(section, main_id),
+    )
+
+
+@router.callback_query(F.data.startswith("sci:"))
+async def on_section_content(call: CallbackQuery, bot: Bot):
+    try:
+        await call.answer()
+    except Exception:
+        pass
+    conn_id = getattr(call.message, "business_connection_id", None)
+    if not conn_id:
+        return
+    owner_id, enabled, rules, sub_active, greeting, calc_enabled = await db.get_reply_context(conn_id)
+    if not owner_id:
+        return
+    parts = call.data.split(":")
+    if len(parts) != 3:
+        return
+    sid = parts[1]
+    try:
+        i = int(parts[2])
+    except ValueError:
+        return
+    sections = await db.get_sections(owner_id)
+    section = next((x for x in sections if x.get("id") == sid), None)
+    if not section:
+        return
+    btns = section.get("buttons", [])
+    if i < 0 or i >= len(btns):
+        return
+    b = btns[i]
     if b.get("calc"):
         if not calc_enabled:
             await bot.send_message(

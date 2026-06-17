@@ -19,3 +19,9 @@ class Greeting(StatesGroup):
 class Buttons(StatesGroup):
     label = State()
     value = State()
+
+
+class Section(StatesGroup):
+    name = State()
+    btn_label = State()
+    btn_value = State()
