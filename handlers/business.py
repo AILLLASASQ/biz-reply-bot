@@ -85,6 +85,16 @@ async def _handle_calc_step(message, bot, conn_id, owner_id, customer_id, text, 
     await _save_and_reply_calc(message, bot, conn_id, owner_id, customer_id, you, n)
 
 
+async def _menu_keyboard(owner_id, greeting):
+    main_id = await db.get_main_section_id(owner_id)
+    if main_id:
+        sections = await db.get_sections(owner_id)
+        section = next((x for x in sections if x.get("id") == main_id), None)
+        if section and section.get("buttons"):
+            return kb.section_render_kb(section, main_id)
+    return kb.greeting_buttons_kb(greeting.get("buttons"))
+
+
 @router.business_message(F.text)
 async def on_message(message: Message, bot: Bot):
     if message.from_user and message.from_user.is_bot:
@@ -140,12 +150,11 @@ async def on_message(message: Message, bot: Bot):
                 return
 
     if text == "القائمة":
-        gb = greeting.get("buttons") or []
         await bot.send_message(
             chat_id=message.chat.id,
             text=greeting["text"] or "👋 اختر ما يهمك:",
             business_connection_id=conn_id,
-            reply_markup=kb.greeting_buttons_kb(gb),
+            reply_markup=await _menu_keyboard(owner_id, greeting),
         )
         return
 
@@ -165,7 +174,7 @@ async def on_message(message: Message, bot: Bot):
                 chat_id=message.chat.id,
                 text=greeting["text"],
                 business_connection_id=conn_id,
-                reply_markup=kb.greeting_buttons_kb(greeting.get("buttons")),
+                reply_markup=await _menu_keyboard(owner_id, greeting),
             )
 
     low = text.lower()

@@ -149,7 +149,8 @@ def greeting_buttons_kb(buttons):
             btns.append(InlineKeyboardButton(text=_trunc(b["text"]), url=b["url"]))
         else:
             btns.append(InlineKeyboardButton(text=_trunc(b["text"]), callback_data=f"gb:{i}"))
-    rows = [btns[i : i + 2] for i in range(0, len(btns), 2)]
+    per_row = 1 if any(len(b.get("text", "")) > 16 for b in buttons) else 2
+    rows = [btns[i : i + per_row] for i in range(0, len(btns), per_row)]
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
