@@ -274,7 +274,7 @@ async def on_calc_history(call: CallbackQuery, bot: Bot):
     )
 
 
-@router.callback_query(F.data == "calc:table")
+@router.callback_query(F.data.in_({"calc:table", "calc:table:team"}))
 async def on_calc_table(call: CallbackQuery, bot: Bot):
     try:
         await call.answer()
@@ -283,9 +283,10 @@ async def on_calc_table(call: CallbackQuery, bot: Bot):
     conn_id = getattr(call.message, "business_connection_id", None)
     if not conn_id:
         return
+    mode = "team" if call.data.endswith(":team") else "solo"
     await bot.send_message(
         chat_id=call.message.chat.id,
-        text=calc.format_tables_all(),
+        text=calc.format_table(mode),
         business_connection_id=conn_id,
     )
 
@@ -342,7 +343,7 @@ async def on_greeting_button(call: CallbackQuery, bot: Bot):
             chat_id=call.message.chat.id,
             text=b.get("reply") or "🧮 حاسبة المعركة الفردية",
             business_connection_id=conn_id,
-            reply_markup=kb.calc_intro_kb(),
+            reply_markup=kb.calc_intro_kb(b.get("calc_mode", "solo")),
         )
         return
     await bot.send_message(
@@ -418,7 +419,7 @@ async def on_section_content(call: CallbackQuery, bot: Bot):
             chat_id=call.message.chat.id,
             text=b.get("reply") or "🧮 حاسبة المعركة الفردية",
             business_connection_id=conn_id,
-            reply_markup=kb.calc_intro_kb(),
+            reply_markup=kb.calc_intro_kb(b.get("calc_mode", "solo")),
         )
         return
     await bot.send_message(
@@ -472,7 +473,7 @@ async def on_button(call: CallbackQuery, bot: Bot):
             chat_id=call.message.chat.id,
             text=btn.get("reply") or "🧮 حاسبة المعركة الفردية",
             business_connection_id=conn_id,
-            reply_markup=kb.calc_intro_kb(),
+            reply_markup=kb.calc_intro_kb(btn.get("calc_mode", "solo")),
         )
         return
 

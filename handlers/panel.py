@@ -187,7 +187,7 @@ async def btn_label(message: Message, state: FSMContext):
     await message.answer(
         "أرسل <b>رد هذا الزر</b>:\n"
         "• نص طويل/مرتب، أو رابط (يبدأ بـ http)\n"
-        "• أو <code>/calc</code> ثم شرحك ← زر يفتح الحاسبة"
+        "• <code>/calc</code> ثم شرحك ← الحاسبة الفردية\n• <code>/teamcalc</code> ثم شرحك ← معركة الفريق"
     )
 
 
@@ -197,7 +197,10 @@ async def btn_value(message: Message, state: FSMContext):
     data = await state.get_data()
     label = data.get("pending_label", "زر")
     btns = data.get("btns", [])
-    if val.startswith("/calc"):
+    if val.startswith("/teamcalc"):
+        explanation = val[9:].strip() or "👥 معركة الفريق"
+        btns.append({"text": label, "calc": True, "calc_mode": "team", "reply": explanation})
+    elif val.startswith("/calc"):
         explanation = val[5:].strip() or "🧮 حاسبة المعركة الفردية"
         btns.append({"text": label, "calc": True, "reply": explanation})
     elif val.startswith("http://") or val.startswith("https://"):
@@ -357,7 +360,7 @@ async def greeting_buttons_start(call: CallbackQuery, state: FSMContext):
     await state.set_state(Buttons.label)
     await call.message.answer(
         "أرسل <b>اسم الزر</b> الأول لأزرار الترحيب، أو «تخطي» للحفظ بدون أزرار.\n"
-        "القيمة لكل زر: نص، أو رابط (http)، أو <code>/calc</code> ثم الشرح (للحاسبة)."
+        "القيمة لكل زر: نص، رابط (http)، <code>/calc</code> (فردية)، أو <code>/teamcalc</code> (فريق) ثم الشرح."
     )
     await call.answer()
 
@@ -553,7 +556,7 @@ async def sx_btn_label(message: Message, state: FSMContext):
         await state.set_state(Section.btn_value)
         await message.answer(
             "أرسل محتوى الزر:\n"
-            "• نص، أو رابط (http)، أو <code>/calc</code> ثم الشرح (للحاسبة)."
+            "• نص، رابط (http)، <code>/calc</code> (فردية)، أو <code>/teamcalc</code> (فريق) ثم الشرح."
         )
     else:
         await state.set_state(None)
@@ -570,7 +573,9 @@ async def sx_btn_value(message: Message, state: FSMContext):
     data = await state.get_data()
     sid = data["sec_id"]
     label = data.get("pending_label", "زر")
-    if val.startswith("/calc"):
+    if val.startswith("/teamcalc"):
+        btn = {"text": label, "kind": "content", "calc": True, "calc_mode": "team", "reply": val[9:].strip() or "👥 معركة الفريق"}
+    elif val.startswith("/calc"):
         btn = {"text": label, "kind": "content", "calc": True, "reply": val[5:].strip() or "🧮 حاسبة المعركة الفردية"}
     elif val.startswith("http://") or val.startswith("https://"):
         btn = {"text": label, "kind": "content", "url": val}

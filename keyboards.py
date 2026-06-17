@@ -129,11 +129,20 @@ def calc_again_kb(mode="solo") -> InlineKeyboardMarkup:
     )
 
 
-def calc_intro_kb() -> InlineKeyboardMarkup:
+def calc_intro_kb(mode="solo") -> InlineKeyboardMarkup:
+    if mode == "team":
+        return InlineKeyboardMarkup(
+            inline_keyboard=[
+                [InlineKeyboardButton(text="👥 ابدأ حساب الفريق", callback_data="calc:start:team")],
+                [
+                    InlineKeyboardButton(text="📋 سجلي", callback_data="calc:history"),
+                    InlineKeyboardButton(text="📖 جدول الفريق", callback_data="calc:table:team"),
+                ],
+            ]
+        )
     return InlineKeyboardMarkup(
         inline_keyboard=[
-            [InlineKeyboardButton(text="🧮 المعركة الفردية", callback_data="calc:start")],
-            [InlineKeyboardButton(text="👥 معركة الفريق", callback_data="calc:start:team")],
+            [InlineKeyboardButton(text="🧮 ابدأ الحساب", callback_data="calc:start")],
             [
                 InlineKeyboardButton(text="📋 سجلي", callback_data="calc:history"),
                 InlineKeyboardButton(text="📖 الجدول", callback_data="calc:table"),
