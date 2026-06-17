@@ -61,29 +61,28 @@ async def on_connect(conn: BusinessConnection):
     await db.ensure_trial(conn.user.id, config.TRIAL_DAYS)
 
 
-async def _save_and_reply_calc(message, bot, conn_id, owner_id, customer_id, you, opp):
-    yp, op, win, loss = calc.compute(you, opp)
+async def _save_and_reply_calc(message, bot, conn_id, owner_id, customer_id, you, opp, mode="solo"):
+    yp, op, win, loss = calc.compute(you, opp, mode)
     await bot.send_message(
         chat_id=message.chat.id,
-        text=calc.format_result(you, opp),
+        text=calc.format_result(you, opp, mode),
         business_connection_id=conn_id,
-        reply_markup=kb.calc_again_kb(),
+        reply_markup=kb.calc_again_kb(mode),
     )
     await db.add_calc_history(
         owner_id,
         str(customer_id),
-        {"you": you, "opp": opp, "yp": yp, "op": op, "win": win, "loss": loss, "ts": time.time()},
+        {"you": you, "opp": opp, "yp": yp, "op": op, "win": win, "loss": loss, "mode": mode, "ts": time.time()},
     )
 
 
-async def _start_calc(message, bot, conn_id, owner_id, customer_id, text, key):
-    parts = text.split()
-    nums = [calc.parse_number(p) for p in parts[1:]]
+async def _start_calc(message, bot, conn_id, owner_id, customer_id, rest, key, mode="solo"):
+    nums = [calc.parse_number(p) for p in rest.split()]
     nums = [n for n in nums if n is not None]
     if len(nums) >= 2:
-        await _save_and_reply_calc(message, bot, conn_id, owner_id, customer_id, nums[0], nums[1])
+        await _save_and_reply_calc(message, bot, conn_id, owner_id, customer_id, nums[0], nums[1], mode)
         return
-    _calc_state[key] = {"step": "you"}
+    _calc_state[key] = {"step": "you", "mode": mode}
     await bot.send_message(
         chat_id=message.chat.id,
         text="🧮 أرسل شعبيتك (أو «إلغاء»):",
@@ -116,8 +115,9 @@ async def _handle_calc_step(message, bot, conn_id, owner_id, customer_id, text, 
         )
         return
     you = st.get("you", 0)
+    mode = st.get("mode", "solo")
     _calc_state.pop(key, None)
-    await _save_and_reply_calc(message, bot, conn_id, owner_id, customer_id, you, n)
+    await _save_and_reply_calc(message, bot, conn_id, owner_id, customer_id, you, n, mode)
 
 
 async def _menu_keyboard(owner_id, greeting):
@@ -167,7 +167,10 @@ async def on_message(message: Message, bot: Bot):
             )
             return
         if text == "حاسبة" or text.startswith("حاسبة "):
-            await _start_calc(message, bot, conn_id, owner_id, customer_id, text, key)
+            await _start_calc(message, bot, conn_id, owner_id, customer_id, text[5:].strip(), key, "solo")
+            return
+        if text == "نقاط فريق" or text.startswith("نقاط فريق "):
+            await _start_calc(message, bot, conn_id, owner_id, customer_id, text[9:].strip(), key, "team")
             return
 
     if text == "الأقسام":
@@ -231,7 +234,7 @@ async def on_message(message: Message, bot: Bot):
             break
 
 
-@router.callback_query(F.data.in_({"calc:again", "calc:start"}))
+@router.callback_query(F.data.in_({"calc:again", "calc:start", "calc:again:team", "calc:start:team"}))
 async def on_calc_start(call: CallbackQuery, bot: Bot):
     try:
         await call.answer()
@@ -240,8 +243,9 @@ async def on_calc_start(call: CallbackQuery, bot: Bot):
     conn_id = getattr(call.message, "business_connection_id", None)
     if not conn_id:
         return
+    mode = "team" if call.data.endswith(":team") else "solo"
     key = (conn_id, str(call.from_user.id))
-    _calc_state[key] = {"step": "you"}
+    _calc_state[key] = {"step": "you", "mode": mode}
     await bot.send_message(
         chat_id=call.message.chat.id,
         text="🧮 أرسل شعبيتك (أو «إلغاء»):",
@@ -281,7 +285,7 @@ async def on_calc_table(call: CallbackQuery, bot: Bot):
         return
     await bot.send_message(
         chat_id=call.message.chat.id,
-        text=calc.format_table(),
+        text=calc.format_tables_all(),
         business_connection_id=conn_id,
     )
 
