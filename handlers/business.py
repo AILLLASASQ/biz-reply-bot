@@ -19,6 +19,12 @@ class _Cooldown(BaseMiddleware):
         self.last = {}
 
     async def __call__(self, handler, event, data):
+        # استثناء: المستخدم وسط حساب متعدّد الخطوات لا يُقيّد (رسالته إجابة متوقّعة)
+        if isinstance(event, Message):
+            conn_id = getattr(event, "business_connection_id", None)
+            u0 = getattr(getattr(event, "from_user", None), "id", None)
+            if conn_id and (conn_id, str(u0)) in _calc_state:
+                return await handler(event, data)
         uid = getattr(getattr(event, "from_user", None), "id", None)
         if uid is not None:
             now = time.monotonic()
