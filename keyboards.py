@@ -187,6 +187,8 @@ def sx_section_kb(section, main_id):
     ]
     if sid != main_id:
         rows.append([InlineKeyboardButton(text="⭐ تعيين كرئيسي", callback_data=f"sx:main:{sid}")])
+    if section.get("buttons"):
+        rows.append([InlineKeyboardButton(text="🗑 حذف زر", callback_data=f"sx:bmanage:{sid}")])
     rows.append([InlineKeyboardButton(text="🗑 حذف القسم", callback_data=f"sx:del:{sid}")])
     rows.append([InlineKeyboardButton(text="🔙 الأقسام", callback_data="sx:list")])
     return InlineKeyboardMarkup(inline_keyboard=rows)
@@ -199,4 +201,15 @@ def sx_pick_target_kb(sections, sid):
             continue
         rows.append([InlineKeyboardButton(text=sec["name"], callback_data=f"sx:pick:{sid}:{sec['id']}")])
     rows.append([InlineKeyboardButton(text="إلغاء", callback_data=f"sx:open:{sid}")])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def sx_buttons_manage_kb(section):
+    sid = section["id"]
+    rows = []
+    for i, b in enumerate(section.get("buttons", [])):
+        rows.append([InlineKeyboardButton(text=f"🗑 {_trunc(b.get('text', ''), 24)}", callback_data=f"sx:bdel:{sid}:{i}")])
+    if not rows:
+        rows.append([InlineKeyboardButton(text="(لا أزرار)", callback_data="noop")])
+    rows.append([InlineKeyboardButton(text="🔙 رجوع للقسم", callback_data=f"sx:open:{sid}")])
     return InlineKeyboardMarkup(inline_keyboard=rows)

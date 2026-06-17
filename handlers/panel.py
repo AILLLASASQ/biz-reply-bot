@@ -469,6 +469,40 @@ async def sx_main(call: CallbackQuery):
     await _send_section(call.message, call.from_user.id, sid)
 
 
+@router.callback_query(F.data.startswith("sx:bmanage:"))
+async def sx_bmanage(call: CallbackQuery):
+    sid = call.data.split(":", 2)[2]
+    sections = await db.get_sections(call.from_user.id)
+    section = next((x for x in sections if x.get("id") == sid), None)
+    if not section:
+        await call.answer()
+        return
+    await call.message.answer("اضغط على الزر لحذفه:", reply_markup=kb.sx_buttons_manage_kb(section))
+    await call.answer()
+
+
+@router.callback_query(F.data.startswith("sx:bdel:"))
+async def sx_bdel(call: CallbackQuery):
+    parts = call.data.split(":", 3)
+    if len(parts) != 4:
+        await call.answer()
+        return
+    sid, idx = parts[2], parts[3]
+    try:
+        i = int(idx)
+    except ValueError:
+        await call.answer()
+        return
+    await db.delete_section_button(call.from_user.id, sid, i)
+    sections = await db.get_sections(call.from_user.id)
+    section = next((x for x in sections if x.get("id") == sid), None)
+    if section and section.get("buttons"):
+        await call.message.edit_reply_markup(reply_markup=kb.sx_buttons_manage_kb(section))
+    else:
+        await call.message.edit_text("🗑 تم حذف الزر. لا أزرار متبقية.")
+    await call.answer("🗑 حُذف الزر")
+
+
 @router.callback_query(F.data.startswith("sx:del:"))
 async def sx_del(call: CallbackQuery):
     sid = call.data.split(":", 2)[2]

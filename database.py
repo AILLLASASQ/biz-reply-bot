@@ -392,6 +392,18 @@ def _fs_add_section_button(owner_id, section_id, button):
     _fs_set_sections(owner_id, sections)
 
 
+def _fs_delete_section_button(owner_id, section_id, idx):
+    data = _fs_read_business(owner_id)
+    sections = data["sections"]
+    for x in sections:
+        if x.get("id") == section_id:
+            btns = x.get("buttons", [])
+            if 0 <= idx < len(btns):
+                btns.pop(idx)
+            break
+    _fs_set_sections(owner_id, sections)
+
+
 def _fs_set_main_section(owner_id, section_id):
     _db.collection("businesses").document(str(owner_id)).set(
         {"main_section": section_id}, merge=True, timeout=FS_TIMEOUT
@@ -421,6 +433,11 @@ async def delete_section(owner_id, section_id):
 
 async def add_section_button(owner_id, section_id, button):
     await asyncio.to_thread(_fs_add_section_button, owner_id, section_id, button)
+    _invalidate(owner_id)
+
+
+async def delete_section_button(owner_id, section_id, idx):
+    await asyncio.to_thread(_fs_delete_section_button, owner_id, section_id, idx)
     _invalidate(owner_id)
 
 
