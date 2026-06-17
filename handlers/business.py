@@ -1,6 +1,6 @@
 import time
 
-from aiogram import Router, Bot, F
+from aiogram import Router, Bot, F, BaseMiddleware
 from aiogram.types import BusinessConnection, Message, CallbackQuery
 
 import config
@@ -11,6 +11,35 @@ import calc
 router = Router()
 
 _calc_state = {}
+
+
+class _Cooldown(BaseMiddleware):
+    def __init__(self, seconds=1.0):
+        self.seconds = seconds
+        self.last = {}
+
+    async def __call__(self, handler, event, data):
+        uid = getattr(getattr(event, "from_user", None), "id", None)
+        if uid is not None:
+            now = time.monotonic()
+            if now - self.last.get(uid, 0.0) < self.seconds:
+                if isinstance(event, CallbackQuery):
+                    try:
+                        await event.answer("تمهّل قليلاً ⏳")
+                    except Exception:
+                        pass
+                return None
+            if len(self.last) > 5000:
+                cutoff = now - 60
+                for k in [k for k, v in list(self.last.items()) if v < cutoff]:
+                    self.last.pop(k, None)
+            self.last[uid] = now
+        return await handler(event, data)
+
+
+_cooldown = _Cooldown(1.0)
+router.business_message.middleware(_cooldown)
+router.callback_query.middleware(_cooldown)
 
 
 @router.business_connection()
