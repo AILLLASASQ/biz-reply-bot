@@ -155,19 +155,45 @@ def greeting_buttons_kb(buttons):
 
 
 def section_render_kb(section, main_id):
-    rows = []
-    for i, b in enumerate(section.get("buttons", [])):
+    sid = section.get("id")
+
+    def _mk(b, i):
         if b.get("kind") == "section":
-            rows.append([InlineKeyboardButton(text=_trunc(b["text"]), callback_data=f"sec:{b['target']}")])
+            return InlineKeyboardButton(text=_trunc(b["text"]), callback_data=f"sec:{b['target']}")
         elif b.get("url"):
-            rows.append([InlineKeyboardButton(text=_trunc(b["text"]), url=b["url"])])
+            return InlineKeyboardButton(text=_trunc(b["text"]), url=b["url"])
+        return InlineKeyboardButton(text=_trunc(b["text"]), callback_data=f"sci:{sid}:{i}")
+
+    rows = []
+    pending = []
+    for i, b in enumerate(section.get("buttons", [])):
+        btn = _mk(b, i)
+        if b.get("wide", True):
+            if pending:
+                rows.append(pending)
+                pending = []
+            rows.append([btn])
         else:
-            rows.append([InlineKeyboardButton(text=_trunc(b["text"]), callback_data=f"sci:{section['id']}:{i}")])
+            pending.append(btn)
+            if len(pending) == 2:
+                rows.append(pending)
+                pending = []
+    if pending:
+        rows.append(pending)
     if not rows:
         rows.append([InlineKeyboardButton(text="(فارغ)", callback_data="noop")])
-    if section.get("id") != main_id and main_id:
+    if sid != main_id and main_id:
         rows.append([InlineKeyboardButton(text="🔙 رجوع", callback_data=f"sec:{main_id}")])
     return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def sx_width_kb():
+    return InlineKeyboardMarkup(
+        inline_keyboard=[[
+            InlineKeyboardButton(text="◼️ صف كامل", callback_data="sx:w:full"),
+            InlineKeyboardButton(text="◧ نصف", callback_data="sx:w:half"),
+        ]]
+    )
 
 
 def sx_list_kb(sections, main_id):

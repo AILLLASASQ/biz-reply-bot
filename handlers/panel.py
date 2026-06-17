@@ -469,6 +469,22 @@ async def sx_main(call: CallbackQuery):
     await _send_section(call.message, call.from_user.id, sid)
 
 
+@router.callback_query(F.data.startswith("sx:w:"))
+async def sx_width(call: CallbackQuery, state: FSMContext):
+    wide = call.data.split(":")[2] == "full"
+    data = await state.get_data()
+    btn = data.get("pending_btn")
+    sid = data.get("sec_id")
+    if not btn or not sid:
+        await call.answer()
+        return
+    btn["wide"] = wide
+    await db.add_section_button(call.from_user.id, sid, btn)
+    await state.clear()
+    await call.answer("✅ أُضيف الزر")
+    await _send_section(call.message, call.from_user.id, sid)
+
+
 @router.callback_query(F.data.startswith("sx:bmanage:"))
 async def sx_bmanage(call: CallbackQuery):
     sid = call.data.split(":", 2)[2]
@@ -560,10 +576,9 @@ async def sx_btn_value(message: Message, state: FSMContext):
         btn = {"text": label, "kind": "content", "url": val}
     else:
         btn = {"text": label, "kind": "content", "reply": val}
-    await db.add_section_button(message.from_user.id, sid, btn)
-    await state.clear()
-    await message.answer("✅ أُضيف الزر.")
-    await _send_section(message, message.from_user.id, sid)
+    await state.update_data(pending_btn=btn, sec_id=sid)
+    await state.set_state(None)
+    await message.answer("عرض الزر؟", reply_markup=kb.sx_width_kb())
 
 
 @router.callback_query(F.data.startswith("sx:pick:"))
@@ -571,10 +586,9 @@ async def sx_pick(call: CallbackQuery, state: FSMContext):
     _, _, sid, target = call.data.split(":", 3)
     data = await state.get_data()
     label = data.get("pending_label", "قسم")
-    await db.add_section_button(call.from_user.id, sid, {"text": label, "kind": "section", "target": target})
-    await state.clear()
-    await call.answer("✅ أُضيف الزر")
-    await _send_section(call.message, call.from_user.id, sid)
+    await state.update_data(pending_btn={"text": label, "kind": "section", "target": target}, sec_id=sid)
+    await call.message.answer("عرض الزر؟", reply_markup=kb.sx_width_kb())
+    await call.answer()
 
 
 @router.message(F.text == "⏯ تشغيل / إيقاف")
