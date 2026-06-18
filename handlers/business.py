@@ -1,12 +1,14 @@
 import time
 
 from aiogram import Router, Bot, F, BaseMiddleware
-from aiogram.types import BusinessConnection, Message, CallbackQuery
+from aiogram.types import BusinessConnection, Message, CallbackQuery, BufferedInputFile
 
 import config
 import database as db
 import keyboards as kb
 import calc
+import calc_image
+import asyncio
 
 router = Router()
 
@@ -63,12 +65,35 @@ async def on_connect(conn: BusinessConnection):
 
 async def _save_and_reply_calc(message, bot, conn_id, owner_id, customer_id, you, opp, mode="solo"):
     yp, op, win, loss = calc.compute(you, opp, mode)
-    await bot.send_message(
-        chat_id=message.chat.id,
-        text=calc.format_result(you, opp, mode),
-        business_connection_id=conn_id,
-        reply_markup=kb.calc_again_kb(mode),
-    )
+    frac = calc.progress_fraction(you, mode)
+    name = getattr(message.from_user, "first_name", None) or "لاعب"
+    avatar = None
+    try:
+        photos = await bot.get_user_profile_photos(message.from_user.id, limit=1)
+        if photos.total_count and photos.photos:
+            ph = photos.photos[0][-1]
+            f = await bot.get_file(ph.file_id)
+            buf = await bot.download_file(f.file_path)
+            avatar = buf.read() if hasattr(buf, "read") else bytes(buf)
+    except Exception:
+        avatar = None
+    try:
+        png = await asyncio.to_thread(
+            calc_image.render_result, you, opp, yp, op, win, loss, mode, name, frac, avatar
+        )
+        await bot.send_photo(
+            chat_id=message.chat.id,
+            photo=BufferedInputFile(png, "result.png"),
+            business_connection_id=conn_id,
+            reply_markup=kb.calc_again_kb(mode),
+        )
+    except Exception:
+        await bot.send_message(
+            chat_id=message.chat.id,
+            text=calc.format_result(you, opp, mode),
+            business_connection_id=conn_id,
+            reply_markup=kb.calc_again_kb(mode),
+        )
     await db.add_calc_history(
         owner_id,
         str(customer_id),

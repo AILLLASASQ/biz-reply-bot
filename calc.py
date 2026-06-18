@@ -88,6 +88,14 @@ def _tier_info(value, mode="solo"):
     return table[-1][0] + 1, None, cfg["max"], None
 
 
+def progress_fraction(value, mode="solo"):
+    lower, upper, pts, next_pts = _tier_info(value, mode)
+    if upper is None:
+        return 1.0
+    span = upper - lower
+    return max(0.0, min(1.0, (value - lower) / span if span > 0 else 1.0))
+
+
 def progress_bar(value, mode="solo", segments=10):
     cfg = _m(mode)
     lower, upper, pts, next_pts = _tier_info(value, mode)
