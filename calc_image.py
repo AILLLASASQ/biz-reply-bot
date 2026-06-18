@@ -49,71 +49,116 @@ def _font(size, bold=False):
     return _FONT_CACHE[key]
 
 
-def render_result(you, opp, yp, op, win, loss, mode, name, frac=0.0, avatar_bytes=None):
-    W, H = 700, 760
-    img = Image.new("RGB", (W, H), BG)
-    d = ImageDraw.Draw(img)
+def _short(n):
+    n = int(n)
+    if n >= 1_000_000:
+        return f"{n / 1_000_000:.1f}".rstrip("0").rstrip(".") + "M"
+    if n >= 1000:
+        return f"{n / 1000:.1f}".rstrip("0").rstrip(".") + "K"
+    return f"{n:,}"
 
-    cx, cy, r = 86, 92, 46
-    drew_avatar = False
+
+def _draw_avatar(img, d, cx, cy, r, name, avatar_bytes):
+    drew = False
     if avatar_bytes:
         try:
             av = Image.open(io.BytesIO(avatar_bytes)).convert("RGB").resize((2 * r, 2 * r))
             mask = Image.new("L", (2 * r, 2 * r), 0)
             ImageDraw.Draw(mask).ellipse((0, 0, 2 * r, 2 * r), fill=255)
             img.paste(av, (cx - r, cy - r), mask)
-            drew_avatar = True
+            drew = True
         except Exception:
-            drew_avatar = False
-    if not drew_avatar:
+            drew = False
+    if not drew:
         d.ellipse((cx - r, cy - r, cx + r, cy + r), fill=PANEL)
         ch = (name or "?").strip()[:1] or "?"
-        d.text((cx, cy), _ar(ch), font=_font(44, True), fill=TEAL, anchor="mm")
+        d.text((cx, cy), _ar(ch), font=_font(int(r * 0.9), True), fill=TEAL, anchor="mm")
     d.ellipse((cx - r, cy - r, cx + r, cy + r), outline=TEAL, width=3)
 
-    d.text((150, cy), _ar(name or "لاعب"), font=_font(32, True), fill=WHITE, anchor="lm")
 
+def _verdict(yp, op):
+    if yp > op:
+        return "فوز", GREEN_DK, GREEN_TX, (31, 82, 54), GREEN, PILL_GTX
+    if yp < op:
+        return "خسارة", RED_DK, RED_TX, (90, 37, 40), RED, PILL_RTX
+    return "تعادل", PANEL, LGRAY, DIV, GRAY, (25, 25, 25)
+
+
+def render_result(you, opp, yp, op, mode, name, avatar_bytes=None):
+    W, H = 700, 600
+    img = Image.new("RGB", (W, H), BG)
+    d = ImageDraw.Draw(img)
+    _draw_avatar(img, d, 84, 80, 42, name, avatar_bytes)
+    d.text((142, 80), _ar(name or "لاعب"), font=_font(30, True), fill=WHITE, anchor="lm")
     label = "فريق" if mode == "team" else "فردية"
-    bw, bh = 150, 52
-    bx, by = W - 40 - bw, 66
-    d.rounded_rectangle((bx, by, bx + bw, by + bh), radius=26, fill=BADGE_BG, outline=TEAL, width=2)
-    d.text((bx + bw / 2, by + bh / 2), _ar(label), font=_font(26, True), fill=BADGE_TX, anchor="mm")
+    bw, bh = 140, 48
+    bx, by = W - 40 - bw, 56
+    d.rounded_rectangle((bx, by, bx + bw, by + bh), radius=24, fill=BADGE_BG, outline=TEAL, width=2)
+    d.text((bx + bw / 2, by + bh / 2), _ar(label), font=_font(24, True), fill=BADGE_TX, anchor="mm")
+    d.line((40, 140, W - 40, 140), fill=DIV, width=2)
 
-    d.line((40, 162, W - 40, 162), fill=DIV, width=2)
+    def poprow(y, accent, txt):
+        d.rounded_rectangle((40, y, W - 40, y + 78), radius=14, fill=PANEL)
+        d.rounded_rectangle((48, y + 12, 56, y + 66), radius=4, fill=accent)
+        d.text((W - 62, y + 39), _ar(txt), font=_font(28, True), fill=LGRAY, anchor="rm")
 
-    def player_row(y, accent, label_txt, value, pts, pill_tx):
-        d.rounded_rectangle((40, y, W - 40, y + 100), radius=14, fill=PANEL)
-        d.rounded_rectangle((48, y + 14, 56, y + 86), radius=4, fill=accent)
-        d.text((W - 62, y + 50), _ar(f"{label_txt}: {value:,}"), font=_font(28, True), fill=LGRAY, anchor="rm")
-        pw, ph = 150, 48
-        px, py = 72, y + 26
-        d.rounded_rectangle((px, py, px + pw, py + ph), radius=24, fill=accent)
-        d.text((px + pw / 2, py + ph / 2), _ar(f"{pts} نقطة"), font=_font(24, True), fill=pill_tx, anchor="mm")
+    poprow(156, GREEN, f"شعبيتك: {you:,}")
+    poprow(246, RED, f"الخصم: {opp:,}")
 
-    player_row(188, GREEN, "شعبيتك", you, yp, PILL_GTX)
-    player_row(302, RED, "الخصم", opp, op, PILL_RTX)
+    verdict, fill, txt, bd, _, _ = _verdict(yp, op)
+    d.rounded_rectangle((40, 342, W - 40, 408), radius=16, fill=fill, outline=bd, width=2)
+    d.text((W / 2, 375), _ar(f"النتيجة: {verdict}"), font=_font(34, True), fill=txt, anchor="mm")
 
     gap = 30
     bw2 = (W - 80 - gap) // 2
-    by2 = 432
-    bh2 = 168
-    d.rounded_rectangle((40, by2, 40 + bw2, by2 + bh2), radius=16, fill=GREEN_DK, outline=(31, 82, 54), width=2)
-    d.text((40 + bw2 / 2, by2 + 44), _ar("فوزك يعطيك"), font=_font(24, True), fill=GREEN_LB, anchor="mm")
-    d.text((40 + bw2 / 2, by2 + 108), f"+{win}", font=_font(56, True), fill=GREEN_TX, anchor="mm")
+    y2, h2 = 426, 134
+    d.rounded_rectangle((40, y2, 40 + bw2, y2 + h2), radius=16, fill=GREEN_DK, outline=(31, 82, 54), width=2)
+    d.text((40 + bw2 / 2, y2 + 38), _ar("نقاطك"), font=_font(24, True), fill=GREEN_LB, anchor="mm")
+    d.text((40 + bw2 / 2, y2 + 92), str(yp), font=_font(50, True), fill=GREEN_TX, anchor="mm")
     lx = 40 + bw2 + gap
-    d.rounded_rectangle((lx, by2, lx + bw2, by2 + bh2), radius=16, fill=RED_DK, outline=(90, 37, 40), width=2)
-    d.text((lx + bw2 / 2, by2 + 44), _ar("خسارتك تخصم"), font=_font(24, True), fill=RED_LB, anchor="mm")
-    d.text((lx + bw2 / 2, by2 + 108), f"\u2212{loss}", font=_font(56, True), fill=RED_TX, anchor="mm")
+    d.rounded_rectangle((lx, y2, lx + bw2, y2 + h2), radius=16, fill=RED_DK, outline=(90, 37, 40), width=2)
+    d.text((lx + bw2 / 2, y2 + 38), _ar("نقاط الخصم"), font=_font(24, True), fill=RED_LB, anchor="mm")
+    d.text((lx + bw2 / 2, y2 + 92), str(op), font=_font(50, True), fill=RED_TX, anchor="mm")
 
-    py3 = 648
-    d.text((W / 2, py3), _ar("تقدّمك للشريحة التالية"), font=_font(22), fill=GRAY, anchor="mm")
-    bx3, bw3, bh3 = 40, W - 80, 18
-    by3 = py3 + 26
-    d.rounded_rectangle((bx3, by3, bx3 + bw3, by3 + bh3), radius=9, fill=DIV)
-    fw = max(0, min(1.0, frac)) * bw3
-    if fw >= 1:
-        d.rounded_rectangle((bx3, by3, bx3 + fw, by3 + bh3), radius=9, fill=GREEN)
+    out = io.BytesIO()
+    img.save(out, format="PNG")
+    return out.getvalue()
 
+
+def render_history(name, ops, avatar_bytes=None):
+    W = 700
+    rh, gap = 112, 12
+    n = max(1, len(ops))
+    H = 174 + n * (rh + gap) + 16
+    img = Image.new("RGB", (W, H), BG)
+    d = ImageDraw.Draw(img)
+    _draw_avatar(img, d, 80, 74, 38, name, avatar_bytes)
+    d.text((132, 74), _ar(name or "لاعب"), font=_font(28, True), fill=WHITE, anchor="lm")
+    bw, bh = 120, 44
+    bx, by = W - 40 - bw, 52
+    d.rounded_rectangle((bx, by, bx + bw, by + bh), radius=22, fill=BADGE_BG, outline=TEAL, width=2)
+    d.text((bx + bw / 2, by + bh / 2), _ar("السجل"), font=_font(22, True), fill=BADGE_TX, anchor="mm")
+    wins = sum(1 for o in ops if o["yp"] > o["op"])
+    loss = sum(1 for o in ops if o["yp"] < o["op"])
+    tie = sum(1 for o in ops if o["yp"] == o["op"])
+    d.text((W / 2, 132), _ar(f"فوز {wins}  •  خسارة {loss}  •  تعادل {tie}"), font=_font(22, True), fill=GRAY, anchor="mm")
+    d.line((40, 156, W - 40, 156), fill=DIV, width=2)
+    y = 172
+    for o in ops:
+        you, opp, yp, op, mode = o["you"], o["opp"], o["yp"], o["op"], o.get("mode", "solo")
+        d.rounded_rectangle((40, y, W - 40, y + rh), radius=14, fill=PANEL)
+        vt, _, _, _, acc, _ = _verdict(yp, op)
+        pf = GREEN if yp > op else RED if yp < op else GRAY
+        pt = PILL_GTX if yp > op else PILL_RTX if yp < op else (25, 25, 25)
+        d.rounded_rectangle((48, y + 14, 56, y + rh - 14), radius=4, fill=acc)
+        d.text((W - 66, y + 34), _ar(f"الشعبية: {_short(you)} ضد {_short(opp)}"), font=_font(24, True), fill=LGRAY, anchor="rm")
+        d.text((W - 66, y + 70), _ar(f"النقاط: {yp} ضد {op}"), font=_font(23, True), fill=GRAY, anchor="rm")
+        d.text((W - 66, y + 98), _ar("فردية" if mode == "solo" else "فريق"), font=_font(17), fill=(110, 120, 135), anchor="rm")
+        pw, ph = 124, 48
+        px, py = 70, y + (rh - ph) // 2
+        d.rounded_rectangle((px, py, px + pw, py + ph), radius=24, fill=pf)
+        d.text((px + pw / 2, py + ph / 2), _ar(vt), font=_font(25, True), fill=pt, anchor="mm")
+        y += rh + gap
     out = io.BytesIO()
     img.save(out, format="PNG")
     return out.getvalue()

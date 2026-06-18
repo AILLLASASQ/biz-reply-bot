@@ -63,24 +63,48 @@ async def on_connect(conn: BusinessConnection):
     await db.ensure_trial(conn.user.id, config.TRIAL_DAYS)
 
 
-async def _save_and_reply_calc(message, bot, conn_id, owner_id, customer_id, you, opp, mode="solo"):
-    yp, op, win, loss = calc.compute(you, opp, mode)
-    frac = calc.progress_fraction(you, mode)
-    name = getattr(message.from_user, "first_name", None) or "لاعب"
-    avatar = None
+async def _fetch_avatar(bot, user_id):
     try:
-        photos = await bot.get_user_profile_photos(message.from_user.id, limit=1)
+        photos = await bot.get_user_profile_photos(user_id, limit=1)
         if photos.total_count and photos.photos:
             ph = photos.photos[0][-1]
             f = await bot.get_file(ph.file_id)
             buf = await bot.download_file(f.file_path)
-            avatar = buf.read() if hasattr(buf, "read") else bytes(buf)
+            return buf.read() if hasattr(buf, "read") else bytes(buf)
     except Exception:
-        avatar = None
+        pass
+    return None
+
+
+async def _send_history(bot, chat_id, conn_id, ops, from_user):
+    if not ops:
+        await bot.send_message(chat_id=chat_id, text=calc.format_history(ops), business_connection_id=conn_id)
+        return
+    name = getattr(from_user, "first_name", None) or "لاعب"
+    avatar = await _fetch_avatar(bot, from_user.id)
     try:
-        png = await asyncio.to_thread(
-            calc_image.render_result, you, opp, yp, op, win, loss, mode, name, frac, avatar
+        png = await asyncio.to_thread(calc_image.render_history, name, ops, avatar)
+        await bot.send_photo(
+            chat_id=chat_id,
+            photo=BufferedInputFile(png, "history.png"),
+            business_connection_id=conn_id,
+            reply_markup=kb.calc_history_kb(),
         )
+    except Exception:
+        await bot.send_message(
+            chat_id=chat_id,
+            text=calc.format_history(ops),
+            business_connection_id=conn_id,
+            reply_markup=kb.calc_history_kb(),
+        )
+
+
+async def _save_and_reply_calc(message, bot, conn_id, owner_id, customer_id, you, opp, mode="solo"):
+    yp, op, win, loss = calc.compute(you, opp, mode)
+    name = getattr(message.from_user, "first_name", None) or "لاعب"
+    avatar = await _fetch_avatar(bot, message.from_user.id)
+    try:
+        png = await asyncio.to_thread(calc_image.render_result, you, opp, yp, op, mode, name, avatar)
         await bot.send_photo(
             chat_id=message.chat.id,
             photo=BufferedInputFile(png, "result.png"),
@@ -184,12 +208,7 @@ async def on_message(message: Message, bot: Bot):
             return
         if text in ("سجلي", "عملياتي"):
             ops = await db.get_calc_history(owner_id, str(customer_id))
-            await bot.send_message(
-                chat_id=message.chat.id,
-                text=calc.format_history(ops),
-                business_connection_id=conn_id,
-                reply_markup=kb.calc_history_kb() if ops else None,
-            )
+            await _send_history(bot, message.chat.id, conn_id, ops, message.from_user)
             return
         if text == "حاسبة" or text.startswith("حاسبة "):
             await _start_calc(message, bot, conn_id, owner_id, customer_id, text[5:].strip(), key, "solo")
@@ -291,12 +310,7 @@ async def on_calc_history(call: CallbackQuery, bot: Bot):
     if not owner_id:
         return
     ops = await db.get_calc_history(owner_id, str(call.from_user.id))
-    await bot.send_message(
-        chat_id=call.message.chat.id,
-        text=calc.format_history(ops),
-        business_connection_id=conn_id,
-        reply_markup=kb.calc_history_kb() if ops else None,
-    )
+    await _send_history(bot, call.message.chat.id, conn_id, ops, call.from_user)
 
 
 @router.callback_query(F.data.in_({"calc:table", "calc:table:team"}))
