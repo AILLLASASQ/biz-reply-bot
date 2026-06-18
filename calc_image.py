@@ -84,6 +84,14 @@ def _verdict(yp, op):
     return "تعادل", PANEL, LGRAY, DIV, GRAY, (25, 25, 25)
 
 
+def _awarded(yp, op):
+    if yp > op:
+        return yp + op // 2, op // 2
+    if yp < op:
+        return yp // 2, op + yp // 2
+    return yp, op
+
+
 def render_result(you, opp, yp, op, mode, name, avatar_bytes=None):
     W, H = 700, 600
     img = Image.new("RGB", (W, H), BG)
@@ -112,13 +120,14 @@ def render_result(you, opp, yp, op, mode, name, avatar_bytes=None):
     gap = 30
     bw2 = (W - 80 - gap) // 2
     y2, h2 = 426, 134
+    yf, of = _awarded(yp, op)
     d.rounded_rectangle((40, y2, 40 + bw2, y2 + h2), radius=16, fill=GREEN_DK, outline=(31, 82, 54), width=2)
     d.text((40 + bw2 / 2, y2 + 38), _ar("نقاطك"), font=_font(24, True), fill=GREEN_LB, anchor="mm")
-    d.text((40 + bw2 / 2, y2 + 92), str(yp), font=_font(50, True), fill=GREEN_TX, anchor="mm")
+    d.text((40 + bw2 / 2, y2 + 92), str(yf), font=_font(50, True), fill=GREEN_TX, anchor="mm")
     lx = 40 + bw2 + gap
     d.rounded_rectangle((lx, y2, lx + bw2, y2 + h2), radius=16, fill=RED_DK, outline=(90, 37, 40), width=2)
     d.text((lx + bw2 / 2, y2 + 38), _ar("نقاط الخصم"), font=_font(24, True), fill=RED_LB, anchor="mm")
-    d.text((lx + bw2 / 2, y2 + 92), str(op), font=_font(50, True), fill=RED_TX, anchor="mm")
+    d.text((lx + bw2 / 2, y2 + 92), str(of), font=_font(50, True), fill=RED_TX, anchor="mm")
 
     out = io.BytesIO()
     img.save(out, format="PNG")
@@ -152,7 +161,8 @@ def render_history(name, ops, avatar_bytes=None):
         pt = PILL_GTX if yp > op else PILL_RTX if yp < op else (25, 25, 25)
         d.rounded_rectangle((48, y + 14, 56, y + rh - 14), radius=4, fill=acc)
         d.text((W - 66, y + 34), _ar(f"الشعبية: {_short(you)} ضد {_short(opp)}"), font=_font(24, True), fill=LGRAY, anchor="rm")
-        d.text((W - 66, y + 70), _ar(f"النقاط: {yp} ضد {op}"), font=_font(23, True), fill=GRAY, anchor="rm")
+        yf, of = _awarded(yp, op)
+        d.text((W - 66, y + 70), _ar(f"النقاط: {yf} ضد {of}"), font=_font(23, True), fill=GRAY, anchor="rm")
         d.text((W - 66, y + 98), _ar("فردية" if mode == "solo" else "فريق"), font=_font(17), fill=(110, 120, 135), anchor="rm")
         pw, ph = 124, 48
         px, py = 70, y + (rh - ph) // 2
