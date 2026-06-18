@@ -76,18 +76,18 @@ def _draw_avatar(img, d, cx, cy, r, name, avatar_bytes):
     d.ellipse((cx - r, cy - r, cx + r, cy + r), outline=TEAL, width=3)
 
 
-def _verdict(yp, op):
-    if yp > op:
+def _verdict(you, opp):
+    if you > opp:
         return "فوز", GREEN_DK, GREEN_TX, (31, 82, 54), GREEN, PILL_GTX
-    if yp < op:
+    if you < opp:
         return "خسارة", RED_DK, RED_TX, (90, 37, 40), RED, PILL_RTX
     return "تعادل", PANEL, LGRAY, DIV, GRAY, (25, 25, 25)
 
 
-def _awarded(yp, op):
-    if yp > op:
+def _awarded(you, opp, yp, op):
+    if you > opp:
         return yp + op // 2, op // 2
-    if yp < op:
+    if you < opp:
         return yp // 2, op + yp // 2
     return yp, op
 
@@ -113,14 +113,14 @@ def render_result(you, opp, yp, op, mode, name, avatar_bytes=None):
     poprow(156, GREEN, f"شعبيتك: {you:,}")
     poprow(246, RED, f"الخصم: {opp:,}")
 
-    verdict, fill, txt, bd, _, _ = _verdict(yp, op)
+    verdict, fill, txt, bd, _, _ = _verdict(you, opp)
     d.rounded_rectangle((40, 342, W - 40, 408), radius=16, fill=fill, outline=bd, width=2)
     d.text((W / 2, 375), _ar(f"النتيجة: {verdict}"), font=_font(34, True), fill=txt, anchor="mm")
 
     gap = 30
     bw2 = (W - 80 - gap) // 2
     y2, h2 = 426, 134
-    yf, of = _awarded(yp, op)
+    yf, of = _awarded(you, opp, yp, op)
     d.rounded_rectangle((40, y2, 40 + bw2, y2 + h2), radius=16, fill=GREEN_DK, outline=(31, 82, 54), width=2)
     d.text((40 + bw2 / 2, y2 + 38), _ar("نقاطك"), font=_font(24, True), fill=GREEN_LB, anchor="mm")
     d.text((40 + bw2 / 2, y2 + 92), str(yf), font=_font(50, True), fill=GREEN_TX, anchor="mm")
@@ -156,12 +156,12 @@ def render_history(name, ops, avatar_bytes=None):
     for o in ops:
         you, opp, yp, op, mode = o["you"], o["opp"], o["yp"], o["op"], o.get("mode", "solo")
         d.rounded_rectangle((40, y, W - 40, y + rh), radius=14, fill=PANEL)
-        vt, _, _, _, acc, _ = _verdict(yp, op)
-        pf = GREEN if yp > op else RED if yp < op else GRAY
-        pt = PILL_GTX if yp > op else PILL_RTX if yp < op else (25, 25, 25)
+        vt, _, _, _, acc, _ = _verdict(you, opp)
+        pf = GREEN if you > opp else RED if you < opp else GRAY
+        pt = PILL_GTX if you > opp else PILL_RTX if you < opp else (25, 25, 25)
         d.rounded_rectangle((48, y + 14, 56, y + rh - 14), radius=4, fill=acc)
         d.text((W - 66, y + 34), _ar(f"الشعبية: {_short(you)} ضد {_short(opp)}"), font=_font(24, True), fill=LGRAY, anchor="rm")
-        yf, of = _awarded(yp, op)
+        yf, of = _awarded(you, opp, yp, op)
         d.text((W - 66, y + 70), _ar(f"النقاط: {yf} ضد {of}"), font=_font(23, True), fill=GRAY, anchor="rm")
         d.text((W - 66, y + 98), _ar("فردية" if mode == "solo" else "فريق"), font=_font(17), fill=(110, 120, 135), anchor="rm")
         pw, ph = 124, 48
